@@ -75,6 +75,7 @@ type TestPlan struct {
 type PaidPlan struct {
 	ID                 int64          `json:"id"`
 	Name               string         `json:"name"`
+	Description        string         `json:"description"`
 	InboundIDs         []int          `json:"inbound_ids"`
 	BasePrice          float64        `json:"base_price"`
 	BaseIPLimit        int            `json:"base_ip_limit"`

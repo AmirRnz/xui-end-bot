@@ -133,6 +133,7 @@ func HandleCreatePaidPlan(c telebot.Context) error {
 		"id":                 int64(0),
 		"type":               "paid",
 		"name":               "",
+		"description":        "",
 		"inbound_ids":        []int{},
 		"base_price":         0.0,
 		"base_ip_limit":      1,
@@ -200,6 +201,7 @@ func HandleAdminPlanEdit(c telebot.Context) error {
 			"id":                 plan.ID,
 			"type":               "paid",
 			"name":               plan.Name,
+			"description":        plan.Description,
 			"inbound_ids":        plan.InboundIDs,
 			"base_price":         plan.BasePrice,
 			"base_ip_limit":      plan.BaseIPLimit,
@@ -274,6 +276,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 
 func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{}) error {
 	name := draftGetString(draft, "name")
+	description := draftGetString(draft, "description")
 	inboundIDs := draftGetIntSlice(draft, "inbound_ids")
 	basePrice := draftGetFloat64(draft, "base_price")
 	baseIP := draftGetInt(draft, "base_ip_limit")
@@ -305,6 +308,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 
 	text := fmt.Sprintf("💼 *Draft Paid Plan Config*\n\n"+
 		"📝 Name: %s\n"+
+		"📝 Description: %s\n"+
 		"📡 Inbounds: %s\n"+
 		"📊 Plan Type: %s\n"+
 		"%s"+
@@ -315,6 +319,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		"👥 Access: %s\n"+
 		"🔄 Sync Active Subscribers: %t\n",
 		nonEmpty(name, "(not set)"),
+		nonEmpty(description, "(not set)"),
 		inboundLabel,
 		map[bool]string{true: "Limited", false: "Unlimited"}[isLimited],
 		priceBlock,
@@ -328,7 +333,8 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 
 	menu := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
-	rows = append(rows, menu.Row(menu.Data("📝 Name", "admin_draft_edit", "paid:name"), menu.Data("📡 Inbounds", "admin_draft_inbounds", "paid")))
+	rows = append(rows, menu.Row(menu.Data("📝 Name", "admin_draft_edit", "paid:name"), menu.Data("📝 Description", "admin_draft_edit", "paid:description")))
+	rows = append(rows, menu.Row(menu.Data("📡 Inbounds", "admin_draft_inbounds", "paid")))
 
 	typeLabel := "📊 Type: Unlimited"
 	if isLimited {
@@ -820,6 +826,7 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 		}
 
 	} else {
+		description := draftGetString(draft, "description")
 		basePrice := draftGetFloat64(draft, "base_price")
 		baseIP := draftGetInt(draft, "base_ip_limit")
 		maxIP := draftGetInt(draft, "max_ip_limit")
@@ -834,6 +841,7 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 		plan := &db.PaidPlan{
 			ID:                 id,
 			Name:               name,
+			Description:        description,
 			InboundIDs:         inboundIDs,
 			BasePrice:          basePrice,
 			BaseIPLimit:        baseIP,
@@ -1218,10 +1226,10 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 		}
 
 		text = fmt.Sprintf("💼 *Paid plan #%d*\n"+
-			"Name: %s\nEnabled: %t\nGlobal: %t\n"+
+			"Name: %s\nDescription: %s\nEnabled: %t\nGlobal: %t\n"+
 			"Inbounds: %s\n%s\nIP: %d-%d\n"+
 			"Extra IP: %.0f\nFlow: %s\nDiscounts: %+v\nPrivate users: %v",
-			plan.ID, plan.Name, plan.Enabled, plan.IsGlobal,
+			plan.ID, plan.Name, plan.Description, plan.Enabled, plan.IsGlobal,
 			inboundLabel(plan.InboundIDs), priceBlock, plan.BaseIPLimit, plan.MaxIPLimit,
 			plan.PricePerExtraIP, plan.Flow, plan.DiscountTiers, access)
 	}

@@ -53,12 +53,16 @@ func HandleBuySubFlow(c telebot.Context) error {
 	rows := make([]telebot.Row, 0, len(plans)+1)
 	for _, plan := range plans {
 		if plan.IsLimited {
-			text.WriteString(fmt.Sprintf("📦 *%s* (محدود)\nقیمت هر گیگابایت: %.0f %s\nحداقل ترافیک: %d گیگابایت\nماهانه اضافه: +%.0f %s\nدستگاه همزمان: %d تا سقف %d\nهزینه کاربر اضافه: +%.0f %s/کاربر/ماه\n\n",
+			text.WriteString(fmt.Sprintf("📦 *%s* (محدود)\nقیمت هر گیگابایت: %.0f %s\nحداقل ترافیک: %d گیگابایت\nماهانه اضافه: +%.0f %s\nدستگاه همزمان: %d تا سقف %d\nهزینه کاربر اضافه: +%.0f %s/کاربر/ماه\n",
 				plan.Name, plan.PricePerGB, currency, plan.MinDataGB, plan.PricePerExtraMonth, currency, plan.BaseIPLimit, plan.MaxIPLimit, plan.PricePerExtraIP, currency))
 		} else {
-			text.WriteString(fmt.Sprintf("📦 *%s* (نامحدود)\nقیمت پایه: %.0f %s/ماهانه\nدستگاه همزمان: %d تا سقف %d\nهزینه کاربر اضافه: +%.0f %s/کاربر/ماه\n\n",
+			text.WriteString(fmt.Sprintf("📦 *%s* (نامحدود)\nقیمت پایه: %.0f %s/ماهانه\nدستگاه همزمان: %d تا سقف %d\nهزینه کاربر اضافه: +%.0f %s/کاربر/ماه\n",
 				plan.Name, plan.BasePrice, currency, plan.BaseIPLimit, plan.MaxIPLimit, plan.PricePerExtraIP, currency))
 		}
+		if plan.Description != "" {
+			text.WriteString(fmt.Sprintf("%s\n", plan.Description))
+		}
+		text.WriteString("\n")
 		rows = append(rows, menu.Row(menu.Data("📦 "+plan.Name, "select_buy_plan", fmt.Sprintf("%d", plan.ID))))
 	}
 	rows = append(rows, menu.Row(menu.Data("« بازگشت", "menu_main")))
@@ -105,7 +109,12 @@ func HandleSelectBuyPlan(c telebot.Context) error {
 		priceLabel = fmt.Sprintf("قیمت هر گیگابایت: %.0f %s\nحداقل ترافیک: %d گیگابایت\nهزینه تمدید ماهانه اضافه: +%.0f %s", plan.PricePerGB, currency, plan.MinDataGB, plan.PricePerExtraMonth, currency)
 	}
 
-	text := fmt.Sprintf("📦 *%s*\n%s%s\n\nمدت زمان سرویس را انتخاب کنید:", plan.Name, priceLabel, discountText)
+	descText := ""
+	if plan.Description != "" {
+		descText = fmt.Sprintf("\n\n%s", plan.Description)
+	}
+
+	text := fmt.Sprintf("📦 *%s*\n%s%s%s\n\nمدت زمان سرویس را انتخاب کنید:", plan.Name, priceLabel, discountText, descText)
 	return maybeEditOrSend(c, text, menu)
 }
 
@@ -771,6 +780,10 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 
 	detailsMsg := fmt.Sprintf("✅ اشتراک شما با موفقیت فعال شد!\n📦 طرح: %s\n⏱️ مدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\n📊 سقف ترافیک: %s\n💰 هزینه پرداخت شده: %.0f %s",
 		plan.Name, months, dataLabel, price, currency)
+
+	if plan.Description != "" {
+		detailsMsg += fmt.Sprintf("\n\nنکات استفاده:\n%s", plan.Description)
+	}
 
 	if err := sendSubscriptionResult(c, subLink, detailsMsg); err != nil {
 		_ = c.Send(detailsMsg + "\n`" + subLink + "`", telebot.ModeMarkdown)
