@@ -202,10 +202,6 @@ func showSubscriptionDetail(c telebot.Context, user *db.User, sub *db.Subscripti
 	rows := []telebot.Row{
 		menu.Row(
 			menu.Data("🔗 دریافت لینک اتصال", "sub_get_link", fmt.Sprintf("%d", sub.ID)),
-			menu.Data("✏️ تغییر نام", "sub_rename", fmt.Sprintf("%d", sub.ID)),
-		),
-		menu.Row(
-			menu.Data("⏸ روشن/خاموش", "sub_toggle", fmt.Sprintf("%d", sub.ID)),
 		),
 	}
 	if sub.PlanType == db.PlanTypePaid {
@@ -215,7 +211,6 @@ func showSubscriptionDetail(c telebot.Context, user *db.User, sub *db.Subscripti
 		))
 	}
 	rows = append(rows,
-		menu.Row(menu.Data("🗑 حذف سرویس", "sub_delete_confirm", fmt.Sprintf("%d", sub.ID))),
 		menu.Row(menu.Data("« بازگشت", "menu_my_services")),
 	)
 	menu.Inline(rows...)
@@ -252,118 +247,27 @@ func HandleGetLink(c telebot.Context) error {
 // ─── Toggle ───────────────────────────────────────────────────────────────────
 
 func HandleToggleSubscription(c telebot.Context) error {
-	sub, user, ok := loadOwnedSubscription(c)
-	if !ok {
-		return nil
-	}
-	sub.IsActive = !sub.IsActive
-	if sub.IsActive {
-		sub.Status = "active"
-	} else {
-		sub.Status = "disabled"
-	}
-	if err := updateXUIFromSubscription(sub); err != nil {
-		return c.Send("خطا در به روزرسانی پنل: " + err.Error())
-	}
-	if err := db.UpdateSubscription(context.Background(), sub); err != nil {
-		return c.Send("خطا در ذخیره وضعیت اشتراک.")
-	}
-	icon := "🔴"
-	statusStr := "خاموش"
-	if sub.IsActive {
-		icon = "🟢"
-		statusStr = "روشن"
-	}
-	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("%s وضعیت اشتراک به %s تغییر یافت.", icon, statusStr)})
-	return showSubscriptionDetail(c, user, sub)
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 // ─── Rename ───────────────────────────────────────────────────────────────────
 
 func HandleSubscriptionRenamePrompt(c telebot.Context) error {
-	user := userFromContext(c)
-	subID, err := parseInt64(callbackPayload(c))
-	if user == nil || err != nil {
-		return c.Send("اشتراک نامعتبر است.")
-	}
-	sub, err := db.GetSubscriptionByID(context.Background(), int(subID))
-	if err != nil || sub == nil || sub.UserID != user.ID {
-		return c.Send("اشتراک یافت نشد.")
-	}
-	bot.FSM.SetState(user.TelegramID, "awaiting_sub_rename", map[string]interface{}{"sub_id": fmt.Sprintf("%d", sub.ID)})
-	return maybeEditOrSend(c, fmt.Sprintf("نام فعلی: %s\n\nلطفا نام انگلیسی جدید مورد نظر خود را ارسال کنید:", sub.DisplayName))
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 func ProcessSubscriptionRename(c telebot.Context, newName string) error {
-	user := userFromContext(c)
-	state := bot.FSM.GetState(user.TelegramID)
-	if state == nil || state.Step != "awaiting_sub_rename" {
-		return c.Send("فرآیند تغییر نام فعالی وجود ندارد.")
-	}
-	subID, _ := parseInt64(fmt.Sprintf("%v", state.Data["sub_id"]))
-
-	if !bot.FSM.CompareAndClearState(user.TelegramID, "awaiting_sub_rename") {
-		return c.Send("فرآیند تغییر نام فعالی وجود ندارد.")
-	}
-
-	unlock := bot.Locker.Lock(fmt.Sprintf("sub:%d", subID))
-	defer unlock()
-
-	sub, err := db.GetSubscriptionByID(context.Background(), int(subID))
-	if err != nil || sub == nil || sub.UserID != user.ID {
-		return c.Send("اشتراک یافت نشد.")
-	}
-	name := sanitizeName(newName)
-	if name == "" {
-		return c.Send("نام نامعتبر است. از حروف، اعداد یا خط تیره انگلیسی استفاده کنید.")
-	}
-	newEmail := fmt.Sprintf("tg%d_%s", user.TelegramID, name)
-	if existing, _ := db.GetSubscriptionByEmail(context.Background(), newEmail); existing != nil && existing.ID != sub.ID {
-		return c.Send("این نام اشتراک قبلا انتخاب شده است. لطفا نام دیگری انتخاب کنید.")
-	}
-	oldEmail := sub.ClientEmail
-	sub.ClientEmail = newEmail
-	sub.DisplayName = name
-	if err := updateXUIRename(oldEmail, sub); err != nil {
-		return c.Send("خطا در تغییر نام در پنل: " + err.Error())
-	}
-	if err := db.UpdateSubscription(context.Background(), sub); err != nil {
-		return c.Send("خطا در ذخیره تغییر نام اشتراک در دیتابیس.")
-	}
-	_ = c.Send(fmt.Sprintf("✅ نام اشتراک با موفقیت به *%s* تغییر یافت.", name))
-	return showSubscriptionDetail(c, user, sub)
+	return c.Send("این امکان غیرفعال شده است.")
 }
 
 // ─── Delete (with confirmation) ───────────────────────────────────────────────
 
 func HandleDeleteSubscriptionConfirm(c telebot.Context) error {
-	sub, _, ok := loadOwnedSubscription(c)
-	if !ok {
-		return nil
-	}
-	menu := &telebot.ReplyMarkup{}
-	menu.Inline(
-		menu.Row(
-			menu.Data("✅ بله، حذف شود", "sub_delete", fmt.Sprintf("%d", sub.ID)),
-			menu.Data("❌ انصراف", "view_sub", fmt.Sprintf("%d", sub.ID)),
-		),
-	)
-	return maybeEditOrSend(c, fmt.Sprintf("⚠️ آیا مطمئن هستید که می‌خواهید اشتراک *%s* را حذف کنید؟\n\nاین عمل غیرقابل بازگشت است و کانکشن شما در پنل حذف خواهد شد.", sub.DisplayName), menu)
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 func HandleDeleteSubscription(c telebot.Context) error {
-	sub, _, ok := loadOwnedSubscription(c)
-	if !ok {
-		return nil
-	}
-	if bot.XUIClient != nil {
-		_ = bot.XUIClient.DeleteClient(sub.ClientEmail)
-	}
-	if err := db.DeleteSubscription(context.Background(), sub.ID); err != nil {
-		return c.Send("خطا در حذف اشتراک از دیتابیس.")
-	}
-	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("🗑 اشتراک %s حذف شد.", sub.DisplayName)})
-	return HandleMyServicesFlow(c)
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 // ─── Increase IP limit ────────────────────────────────────────────────────────

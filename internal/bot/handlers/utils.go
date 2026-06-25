@@ -105,13 +105,8 @@ func randomName() string {
 }
 
 func serviceGroup(user *db.User) string {
-	if group, _ := db.GetSetting(context.Background(), "group_name"); group != "" {
-		return group
-	}
-	if user == nil {
-		return "default"
-	}
-	return fmt.Sprintf("tg%d", user.TelegramID)
+	group, _ := db.GetSetting(context.Background(), "group_name")
+	return group
 }
 
 func userIdentifier(user *db.User) string {
