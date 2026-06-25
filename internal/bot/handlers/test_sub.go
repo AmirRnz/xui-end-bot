@@ -84,298 +84,53 @@ func HandleSelectTestPlan(c telebot.Context) error {
 		return c.Send("طرح تست یافت نشد.")
 	}
 
-	menu := &telebot.ReplyMarkup{}
-	menu.Inline(
-		menu.Row(
-			menu.Data("✏️ نام دلخواه انگلیسی", "ts_custom", fmt.Sprintf("%d", plan.ID)),
-			menu.Data("🎲 نام تصادفی انگلیسی", "ts_random", fmt.Sprintf("%d", plan.ID)),
-		),
-		menu.Row(menu.Data("📦 ایجاد چند تست همزمان", "ts_multi", fmt.Sprintf("%d", plan.ID))),
-		menu.Row(menu.Data("« بازگشت", "menu_test_sub")),
-	)
-	return maybeEditOrSend(c, fmt.Sprintf("🧪 *%s*\n%s\n\nمدت زمان: %s\n\nنحوه نام‌گذاری اشتراک تست خود را انتخاب کنید:",
-		plan.Name, plan.Description, humanDuration(plan.ExpireSeconds)), menu)
+	user := userFromContext(c)
+	if user == nil {
+		return c.Send("کاربر یافت نشد.")
+	}
+
+	email := fmt.Sprintf("test_%s_%s", randomName(), randomToken(4))
+	return generateTestSubscription(c, user, plan.ID, email)
 }
 
 func HandleTestCustom(c telebot.Context) error {
-	user := userFromContext(c)
-	planID, err := parseInt64(callbackPayload(c))
-	if user == nil || err != nil {
-		return c.Send("طرح تست نامعتبر است.")
-	}
-	bot.FSM.SetState(user.TelegramID, "awaiting_test_custom_name", map[string]interface{}{"plan_id": fmt.Sprintf("%d", planID)})
-	return maybeEditOrSend(c, "لطفا نام انگلیسی دلخواه خود را ارسال کنید:")
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 func ProcessTestCustomName(c telebot.Context, customName string) error {
-	user := userFromContext(c)
-	state := bot.FSM.GetState(user.TelegramID)
-	if state == nil {
-		return c.Send("هیچ طرح تستی انتخاب نشده است.")
-	}
-	planID, _ := parseInt64(fmt.Sprintf("%v", state.Data["plan_id"]))
-	bot.FSM.ClearState(user.TelegramID)
-	name := sanitizeName(customName)
-	if name == "" {
-		return c.Send("نام نامعتبر است. از حروف، اعداد یا خط تیره انگلیسی استفاده کنید.")
-	}
-	email := fmt.Sprintf("test_%s_%s", name, randomToken(4))
-	return generateTestSubscription(c, user, planID, email)
+	return c.Send("این امکان غیرفعال شده است.")
 }
 
 func HandleTestRandom(c telebot.Context) error {
-	user := userFromContext(c)
-	planID, err := parseInt64(callbackPayload(c))
-	if user == nil || err != nil {
-		return c.Send("طرح تست نامعتبر است.")
-	}
-	email := fmt.Sprintf("test_%s_%s", randomName(), randomToken(4))
-	return generateTestSubscription(c, user, planID, email)
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 func HandleMultipleTestsChoice(c telebot.Context) error {
-	planID, _ := parseInt64(callbackPayload(c))
-	if planID == 0 {
-		planID = 1
-	}
-	menu := &telebot.ReplyMarkup{}
-	menu.Inline(
-		menu.Row(menu.Data("نام پایه دلخواه", "ts_multi_custom", fmt.Sprintf("%d", planID)), menu.Data("نام‌های تصادفی", "ts_multi_random", fmt.Sprintf("%d", planID))),
-	)
-	return maybeEditOrSend(c, "نحوه نام‌گذاری برای تست‌های چندگانه را انتخاب کنید:", menu)
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 func HandleMultipleTestsCustom(c telebot.Context) error {
-	user := userFromContext(c)
-	planID, _ := parseInt64(callbackPayload(c))
-	if planID == 0 {
-		planID = 1
-	}
-	bot.FSM.SetState(user.TelegramID, "awaiting_multiple_tests_base_name", map[string]interface{}{"plan_id": fmt.Sprintf("%d", planID)})
-	return maybeEditOrSend(c, "لطفا نام پایه انگلیسی را ارسال کنید:")
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 func HandleMultipleTestsRandom(c telebot.Context) error {
-	user := userFromContext(c)
-	planID, _ := parseInt64(callbackPayload(c))
-	if planID == 0 {
-		planID = 1
-	}
-	bot.FSM.SetState(user.TelegramID, "awaiting_multiple_tests_count", map[string]interface{}{"naming": "random", "plan_id": fmt.Sprintf("%d", planID)})
-	return maybeEditOrSend(c, "چه تعداد اشتراک تست می‌خواهید بسازید؟")
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 func ProcessMultipleTestsBaseName(c telebot.Context, baseName string) error {
-	user := userFromContext(c)
-	state := bot.FSM.GetState(user.TelegramID)
-	planID := "1"
-	if state != nil && state.Data["plan_id"] != nil {
-		planID = fmt.Sprintf("%v", state.Data["plan_id"])
-	}
-	baseName = sanitizeName(baseName)
-	if baseName == "" {
-		return c.Send("نام پایه نامعتبر است.")
-	}
-	bot.FSM.SetState(user.TelegramID, "awaiting_multiple_tests_count", map[string]interface{}{"naming": "custom", "baseName": baseName, "plan_id": planID})
-	return c.Send("چه تعداد اشتراک تست می‌خواهید بسازید؟")
+	return c.Send("این امکان غیرفعال شده است.")
 }
 
 func ProcessMultipleTestsCount(c telebot.Context, countStr string) error {
-	count, err := strconv.Atoi(strings.TrimSpace(countStr))
-	if err != nil || count <= 0 {
-		return c.Send("تعداد وارد شده نامعتبر است. یک عدد مثبت وارد کنید.")
-	}
-	user := userFromContext(c)
-	state := bot.FSM.GetState(user.TelegramID)
-	if state == nil {
-		return c.Send("فرآیند تولید تست فعالی یافت نشد.")
-	}
-	planID, _ := parseInt64(fmt.Sprintf("%v", state.Data["plan_id"]))
-	if planID == 0 {
-		planID = 1
-	}
-	naming := fmt.Sprintf("%v", state.Data["naming"])
-	base := sanitizeName(fmt.Sprintf("%v", state.Data["baseName"]))
-	bot.FSM.ClearState(user.TelegramID)
-	return generateMultipleTests(c, user, planID, count, naming, base)
+	return c.Send("این امکان غیرفعال شده است.")
 }
 
 func HandleMultipleTestsRun(c telebot.Context) error {
-	user := userFromContext(c)
-	parts := strings.Split(callbackPayload(c), ":")
-	if len(parts) != 2 {
-		return c.Send("درخواست تست چندگانه نامعتبر است.")
-	}
-	count, err := strconv.Atoi(parts[0])
-	if err != nil || count <= 0 {
-		return c.Send("تعداد نامعتبر است.")
-	}
-	planID, err := parseInt64(parts[1])
-	if err != nil {
-		return c.Send("طرح تست نامعتبر است.")
-	}
-	return generateMultipleTests(c, user, planID, count, "random", "")
+	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
 func generateMultipleTests(c telebot.Context, user *db.User, planID int64, count int, naming, base string) error {
-	unlock := bot.Locker.Lock(fmt.Sprintf("user_test:%d", user.ID))
-	defer unlock()
-
-	plan, err := db.GetTestPlanByID(context.Background(), planID)
-	if err != nil || plan == nil || !plan.Enabled {
-		return c.Send("طرح تست یافت نشد.")
-	}
-	used, _ := db.GetTodayTestUsage(context.Background(), user.ID, plan.ID)
-	limit := testLimitForUser(user, plan)
-	if used+count > limit {
-		return c.Send(fmt.Sprintf("تعداد تست‌های درخواستی فراتر از سقف روزانه شماست. شما امروز حداکثر مجاز به دریافت %d تست دیگر هستید.", maxInt(0, limit-used)))
-	}
-
-	inboundIDs := validInboundIDs(plan.InboundIDs)
-	if len(inboundIDs) == 0 {
-		return c.Send("این طرح تست هیچ کانکشن معتبری ندارد.")
-	}
-
-	type GeneratedSub struct {
-		Email       string
-		UUID        string
-		SubID       string
-		ExpireMilli int64
-		ExpireAt    time.Time
-	}
-	generated := make([]GeneratedSub, 0, count)
-	items := make([]xui.BulkCreateItem, 0, count)
-
-	expireMilli := -int64(plan.ExpireSeconds * 1000)
-	var expireAt time.Time
-
-	for i := 0; i < count; i++ {
-		name := randomName()
-		if naming == "custom" && base != "" {
-			name = fmt.Sprintf("%s_%d", base, i+1)
-		}
-		email := fmt.Sprintf("test_%s_%s", name, randomToken(4))
-		
-		for {
-			existing, _ := db.GetSubscriptionByEmail(context.Background(), email)
-			if existing == nil {
-				break
-			}
-			name = randomName()
-			if naming == "custom" && base != "" {
-				name = fmt.Sprintf("%s_%d", base, i+1)
-			}
-			email = fmt.Sprintf("test_%s_%s", name, randomToken(4))
-		}
-
-		subID := makeSubID()
-		clientUUID := makeClientUUID()
-		comment := fmt.Sprintf("created by xui-end-bot, test, %s", userIdentifier(user))
-		client := newClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, 1, plan.Flow, subID, clientUUID, comment)
-
-		items = append(items, xui.BulkCreateItem{
-			Client:     client,
-			InboundIDs: inboundIDs,
-		})
-
-		generated = append(generated, GeneratedSub{
-			Email:       email,
-			UUID:        clientUUID,
-			SubID:       subID,
-			ExpireMilli: expireMilli,
-			ExpireAt:    expireAt,
-		})
-	}
-
-	bulkResp, err := bot.XUIClient.BulkCreate(items)
-	if err != nil {
-		log.Printf("XUI BulkCreate failed: %v. Refreshing cache and retrying...", err)
-		if bot.XUIClient.Cache != nil {
-			bot.XUIClient.Cache.RefreshSync()
-			newInboundIDs := validInboundIDs(plan.InboundIDs)
-			if !intSlicesEqual(newInboundIDs, inboundIDs) {
-				if len(newInboundIDs) == 0 {
-					return c.Send("خطا: بعد از بازخوانی کانکشن‌ها، کانکشن معتبری پیدا نشد.")
-				}
-				inboundIDs = newInboundIDs
-				for idx := range items {
-					items[idx].InboundIDs = inboundIDs
-				}
-				bulkResp, err = bot.XUIClient.BulkCreate(items)
-			}
-		}
-	}
-
-	if err != nil {
-		return c.Send("خطا در ایجاد گروهی کلاینت‌های تست در پنل: " + err.Error())
-	}
-
-	skippedEmails := make(map[string]bool)
-	if bulkResp != nil {
-		for _, s := range bulkResp.Skipped {
-			skippedEmails[s.Email] = true
-			log.Printf("BulkCreate skipped client %s: %s", s.Email, s.Reason)
-		}
-	}
-
-	var text strings.Builder
-	text.WriteString("✅ *اشتراک‌های تست با موفقیت ساخته شدند!*\n\n")
-
-	actualCreated := 0
-	for _, gen := range generated {
-		if skippedEmails[gen.Email] {
-			continue
-		}
-
-		planIDInt := int(plan.ID)
-		sub := &db.Subscription{
-			UserID:      user.ID,
-			PlanID:      &planIDInt,
-			ClientEmail: gen.Email,
-			ClientUUID:  gen.UUID,
-			SubID:       gen.SubID,
-			Status:      "active",
-			PlanType:    db.PlanTypeTest,
-			DisplayName: gen.Email,
-			IPLimit:     1,
-			ExpireTime:  &gen.ExpireMilli,
-			IsActive:    true,
-			StartDate:   nowUTC(),
-			EndDate:     gen.ExpireAt,
-		}
-
-		if err := db.CreateSubscription(context.Background(), sub); err != nil {
-			log.Printf("[CRITICAL] Failed to save test sub to DB for %s: %v. Rolling back panel client.", gen.Email, err)
-			emailToRollback := gen.Email
-			go func() {
-				var deleteErr error
-				for i := 0; i < 5; i++ {
-					if deleteErr = bot.XUIClient.DeleteClient(emailToRollback); deleteErr == nil {
-						log.Printf("Rollback successful: Deleted test client %s from panel", emailToRollback)
-						return
-					}
-					time.Sleep(time.Duration(1<<i) * time.Second)
-				}
-				log.Printf("[ALERT] CRITICAL: Failed to delete test client %s from panel after 5 retries: %v", emailToRollback, deleteErr)
-			}()
-			continue
-		}
-
-		actualCreated++
-
-		subLink := bot.XUIClient.SubscriptionURLFor(gen.SubID)
-		text.WriteString(fmt.Sprintf("📋 *نام:* `%s`\n", gen.Email))
-		text.WriteString(fmt.Sprintf("🔗 *لینک اشتراک:* %s\n\n", subLink))
-	}
-
-	if actualCreated > 0 {
-		_ = db.IncrementTestUsage(context.Background(), user.ID, plan.ID, actualCreated)
-		_ = c.Send(text.String())
-	} else {
-		_ = c.Send("❌ خطا در ایجاد کلاینت‌های تست.")
-	}
-
-	return showMainMenu(c, user)
+	return c.Send("این امکان غیرفعال شده است.")
 }
 
 func generateTestSubscription(c telebot.Context, user *db.User, planID int64, email string) error {

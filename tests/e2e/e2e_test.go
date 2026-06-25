@@ -595,83 +595,47 @@ func TestE2ESuite(t *testing.T) {
 			}
 		})
 
-		// 7. Approved user generates test subscription with Custom name
-		t.Run("CustomNameTestSub", func(t *testing.T) {
+		// 7. Approved user generates test subscription with randomized name
+		t.Run("RandomNameTestSub", func(t *testing.T) {
 			setupApprovedUser()
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_test_sub")
 			_ = env.ExpectResponse(t, 2*time.Second) // test plan list
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second) // name choices
-			env.SendCallback(userTGID, userUsername, 999, "\fts_custom|1")
-			_ = env.ExpectResponse(t, 2*time.Second) // prompt custom name
-			env.SendMessage(userTGID, userUsername, "customtest")
 			resp := env.ExpectResponse(t, 2*time.Second) // QR photo
 			if !strings.Contains(getStr(resp, "caption"), "test-sub.com") {
 				t.Fatalf("Expected QR code with sub link, got: %+v", resp)
 			}
 
 			// Verify in DB and X-UI Clients
-			sub, err := db.GetSubscriptionByEmail(env.ctx, "myservice_customtest")
-			if err != nil || sub == nil {
-				t.Fatalf("Subscription should exist in DB")
-			}
 			if len(env.mockXUI.Clients) != 1 {
 				t.Fatalf("Client should exist on XUI Panel")
 			}
-		})
-
-		// 8. Approved user generates test subscription with Random name
-		t.Run("RandomNameTestSub", func(t *testing.T) {
-			setupApprovedUser()
-			env.SendCallback(userTGID, userUsername, 999, "\fmenu_test_sub")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
-			resp := env.ExpectResponse(t, 2*time.Second) // QR photo
-			if !strings.Contains(getStr(resp, "caption"), "test-sub.com") {
-				t.Fatalf("Expected QR code with sub link, got: %+v", resp)
+			var email string
+			for e := range env.mockXUI.Clients {
+				email = e
+			}
+			if !strings.HasPrefix(email, "test_") {
+				t.Fatalf("Expected email to have test_ prefix, got %s", email)
+			}
+			sub, err := db.GetSubscriptionByEmail(env.ctx, email)
+			if err != nil || sub == nil {
+				t.Fatalf("Subscription should exist in DB")
 			}
 		})
 
-		// 9. Approved user generates Multiple test subscriptions
-		t.Run("MultipleTestSubs", func(t *testing.T) {
-			setupApprovedUser()
-			// Raise max_per_day so we don't hit daily limit immediately
-			_, _ = db.Pool.Exec(env.ctx, `UPDATE test_plans SET max_per_day = 10 WHERE id = 1`)
-
-			env.SendCallback(userTGID, userUsername, 999, "\fmenu_test_sub")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendCallback(userTGID, userUsername, 999, "\fts_multi|1")
-			_ = env.ExpectResponse(t, 2*time.Second) // selection menu
-			env.SendCallback(userTGID, userUsername, 999, "\fts_multi_run|2:1")
-			// Expects 2 QR responses
-			resp1 := env.ExpectResponse(t, 2*time.Second)
-			resp2 := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp1, "caption"), "successfully") || !strings.Contains(getStr(resp2, "caption"), "successfully") {
-				t.Fatalf("Expected two success messages")
-			}
-		})
-
-		// 10. Daily limit check: Approved user daily limit exceeded
+		// 8. Daily limit check: Approved user daily limit exceeded
 		t.Run("DailyLimitExceeded", func(t *testing.T) {
 			setupApprovedUser()
 			// Generate first
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_test_sub")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
-			_ = env.ExpectResponse(t, 2*time.Second) // Success
+			_ = env.ExpectResponse(t, 2*time.Second) // Success QR photo
 
 			// Second attempt (daily limit is 1)
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_test_sub")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
 			respLimit := env.ExpectResponse(t, 2*time.Second)
 			if !strings.Contains(getStr(respLimit, "text"), "limit") && !strings.Contains(getStr(respLimit, "text"), "exceeded") {
 				t.Fatalf("Expected limit exceeded message, got: %+v", respLimit)
@@ -1131,11 +1095,11 @@ func TestE2ESuite(t *testing.T) {
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'pending')`, userTGID, userUsername)
 
 			// Generate first test sub
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // success
 
 			// Generate second test sub
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			resp := env.ExpectResponse(t, 2*time.Second) // Limit error
 			if !strings.Contains(getStr(resp, "text"), "maximum of 1") {
 				t.Fatalf("Expected unapproved test limit check, got: %+v", resp)
@@ -1145,7 +1109,7 @@ func TestE2ESuite(t *testing.T) {
 		// 32. Select non-existent test plan
 		t.Run("NonExistentTestPlan", func(t *testing.T) {
 			setupApprovedUser()
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|99") // Plan ID 99 doesn't exist
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|99") // Plan ID 99 doesn't exist
 			resp := env.ExpectResponse(t, 2*time.Second)
 			if !strings.Contains(getStr(resp, "text"), "not found") && !strings.Contains(getStr(resp, "text"), "error") {
 				t.Fatalf("Expected not found or error, got: %+v", resp)
@@ -1157,7 +1121,7 @@ func TestE2ESuite(t *testing.T) {
 			setupApprovedUser()
 			env.mockXUI.Fail = true // Enable mock panel failure
 
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			resp := env.ExpectResponse(t, 2*time.Second)
 			if !strings.Contains(getStr(resp, "text"), "failed") {
 				t.Fatalf("Expected error message, got: %+v", resp)
@@ -1171,38 +1135,13 @@ func TestE2ESuite(t *testing.T) {
 			}
 		})
 
-		// 34. Multi test generation limits enforcement
-		t.Run("MultiTestLimitCheck", func(t *testing.T) {
+		// 34. Multi test generation disabled
+		t.Run("MultiTestDisabled", func(t *testing.T) {
 			setupApprovedUser()
-			// Daily limit is 1, let's try to generate 3. Should generate 1 and stop on 2nd due to limit.
 			env.SendCallback(userTGID, userUsername, 999, "\fts_multi_run|3:1")
-			resp1 := env.ExpectResponse(t, 2*time.Second) // first success
-			if !strings.Contains(getStr(resp1, "caption"), "successfully") {
-				t.Fatalf("First should succeed, got: %+v", resp1)
-			}
-			resp2 := env.ExpectResponse(t, 2*time.Second) // stopped at test #2
-			if !strings.Contains(getStr(resp2, "text"), "limit") && !strings.Contains(getStr(resp2, "text"), "Stopped") {
-				t.Fatalf("Expected stop/limit notification, got: %+v", resp2)
-			}
-		})
-
-		// 35. Test sub generation with invalid/taken custom name
-		t.Run("TestSubDuplicateCustomName", func(t *testing.T) {
-			setupApprovedUser()
-			// Generate first customtest
-			env.SendCallback(userTGID, userUsername, 999, "\fts_custom|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendMessage(userTGID, userUsername, "customtest")
-			_ = env.ExpectResponse(t, 2*time.Second)
-
-			// Generate second customtest
-			env.SendCallback(userTGID, userUsername, 999, "\fts_custom|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendMessage(userTGID, userUsername, "customtest")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			// Should fail because unique email/name constraints on X-UI or DB
-			if !strings.Contains(getStr(resp, "text"), "failed") && !strings.Contains(getStr(resp, "text"), "error") {
-				t.Fatalf("Expected failure due to duplicate email/custom name, got: %+v", resp)
+			if !strings.Contains(getStr(resp, "text"), "غیرفعال") {
+				t.Fatalf("Expected disabled notification, got: %+v", resp)
 			}
 		})
 
@@ -1479,7 +1418,7 @@ func TestE2ESuite(t *testing.T) {
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, first_name, last_name, service_name, status, language, wallet_balance) VALUES ($1, $2, 'Test', 'User', 'myservice', 'approved', 'en', 0)`, userTGID, userUsername)
 
 			// Generate test sub
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // success QR photo
 
 			// Admin credits user
@@ -1507,13 +1446,11 @@ func TestE2ESuite(t *testing.T) {
 				t.Fatalf("Expected list containing services, got: %+v", respList)
 			}
 
-			// Disable test subscription (ID 1)
+			// Try to toggle test subscription (ID 1) - should be disabled
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_toggle|1")
-			_ = env.ExpectResponse(t, 2*time.Second) // confirmation
-
-			sub1, _ := db.GetSubscriptionByID(env.ctx, 1)
-			if sub1.IsActive {
-				t.Fatalf("Test sub should be disabled")
+			respToggle := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(respToggle, "text"), "غیرفعال") {
+				t.Fatalf("Expected toggle to be disabled, got: %+v", respToggle)
 			}
 		})
 
@@ -1540,15 +1477,15 @@ func TestE2ESuite(t *testing.T) {
 			}
 
 			// Generate 1st test sub
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 
 			// Generate 2nd test sub
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 
 			// Generate 3rd test sub (should be blocked)
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			resp3 := env.ExpectResponse(t, 2*time.Second)
 			if !strings.Contains(getStr(resp3, "text"), "maximum of 2") {
 				t.Fatalf("Expected limit of 2 blocked message, got: %+v", resp3)
@@ -1698,7 +1635,7 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second)
 
 			// 4. User generates 1 test subscription
-			env.SendCallback(userTGID, userUsername, 999, "\fts_random|1")
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 
 			// 5. User purchases 1 paid subscription (Paid Plan A)
@@ -1711,13 +1648,14 @@ func TestE2ESuite(t *testing.T) {
 			env.SendMessage(userTGID, userUsername, "mysub")
 			_ = env.ExpectResponse(t, 2*time.Second)
 
-			// 6. User manages active subscription: rename it
+			// 6. User manages active subscription: try to rename it (should be disabled)
 			env.SendCallback(userTGID, userUsername, 999, "\fview_sub|2") // Paid sub is ID 2
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_rename|2")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendMessage(userTGID, userUsername, "renamedsub")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			respRename := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(respRename, "text"), "غیرفعال") {
+				t.Fatalf("Expected rename to be disabled, got: %+v", respRename)
+			}
 
 			// 7. User extends active subscription
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend|2")
@@ -1725,17 +1663,20 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend_run|1:2")
 			_ = env.ExpectResponse(t, 2*time.Second)
 
-			// 8. User deletes subscription
+			// 8. User tries to delete subscription (should be disabled)
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_delete|2")
-			_ = env.ExpectResponse(t, 2*time.Second)
-
-			// Verify in DB and mock XUI
-			sub, _ := db.GetSubscriptionByID(env.ctx, 2)
-			if sub != nil {
-				t.Fatalf("Subscription should be deleted from DB")
+			respDelete := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(respDelete, "text"), "غیرفعال") {
+				t.Fatalf("Expected delete to be disabled, got: %+v", respDelete)
 			}
-			if _, exists := env.mockXUI.Clients["lifecycledev_renamedsub"]; exists {
-				t.Fatalf("Client should be deleted from XUI panel")
+
+			// Verify in DB and mock XUI that subscription is still active and not deleted
+			sub, _ := db.GetSubscriptionByID(env.ctx, 2)
+			if sub == nil {
+				t.Fatalf("Subscription should still exist in DB")
+			}
+			if !sub.IsActive {
+				t.Fatalf("Subscription should still be active")
 			}
 		})
 
