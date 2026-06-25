@@ -1825,6 +1825,76 @@ func TestE2ESuite(t *testing.T) {
 				t.Fatalf("Expected user to be banned in DB")
 			}
 		})
+
+		// 61. Scenario: Admin configures approved test limit, support username, and resets tests
+		t.Run("AdminConfigureLimitsSupportAndReset", func(t *testing.T) {
+			setupApprovedUser()
+
+			// 1. Admin configures test_limit to 2
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_set_test_limit")
+			_ = env.ExpectResponse(t, 2*time.Second) // prompt
+			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_test_limit", nil)
+			env.SendMessage(adminTGID, adminUsername, "2")
+			_ = env.ExpectResponse(t, 2*time.Second) // saved confirmation
+
+			// Verify test_limit setting in DB
+			limit, _ := db.GetSetting(env.ctx, "test_limit")
+			if limit != "2" {
+				t.Fatalf("Expected test_limit to be 2 in DB, got %s", limit)
+			}
+
+			// 2. Admin configures support_username to 'my_support_guy'
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_set_support_username")
+			_ = env.ExpectResponse(t, 2*time.Second) // prompt
+			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_support_username", nil)
+			env.SendMessage(adminTGID, adminUsername, "my_support_guy")
+			_ = env.ExpectResponse(t, 2*time.Second) // saved confirmation
+
+			// Verify support_username setting in DB
+			support, _ := db.GetSetting(env.ctx, "support_username")
+			if support != "my_support_guy" {
+				t.Fatalf("Expected support_username to be 'my_support_guy' in DB, got %s", support)
+			}
+
+			// 3. User checks support button (should show @my_support_guy)
+			env.SendCallback(userTGID, userUsername, 999, "\fmenu_support")
+			respSupport := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(respSupport, "text"), "@my_support_guy") {
+				t.Fatalf("Expected support username @my_support_guy in message, got: %+v", respSupport)
+			}
+
+			// 4. Generate 2 test subscriptions (since limit is 2)
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
+			_ = env.ExpectResponse(t, 2*time.Second) // 1st success QR
+
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
+			_ = env.ExpectResponse(t, 2*time.Second) // 2nd success QR
+
+			// Try to generate 3rd test sub (should fail due to limit 2)
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
+			respFail := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(respFail, "text"), "محدودیت") && !strings.Contains(getStr(respFail, "text"), "limit") {
+				t.Fatalf("Expected limit error for 3rd test sub, got: %+v", respFail)
+			}
+
+			// 5. Admin resets tests
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_reset_tests")
+			respReset := env.ExpectResponse(t, 2*time.Second) // alert callback response
+			if !strings.Contains(getStr(respReset, "text"), "ریست شد") && !strings.Contains(getStr(respReset, "text"), "reset") {
+				t.Fatalf("Expected reset alert, got: %+v", respReset)
+			}
+
+			// Verify test_usage table is cleared
+			var count int
+			_ = db.Pool.QueryRow(env.ctx, "SELECT COUNT(*) FROM test_usage").Scan(&count)
+			if count != 0 {
+				t.Fatalf("Expected test_usage count to be 0 after reset, got %d", count)
+			}
+
+			// 6. User should now be able to generate test sub again!
+			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
+			_ = env.ExpectResponse(t, 2*time.Second) // success QR
+		})
 	})
 }
 

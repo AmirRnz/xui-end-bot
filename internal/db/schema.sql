@@ -204,6 +204,8 @@ END $$;
 INSERT INTO bot_settings (key, value) VALUES
     ('auto_approve_users', 'false'),
     ('unapproved_test_limit', '1'),
+    ('test_limit', '1'),
+    ('support_username', ''),
     ('test_global_description', ''),
     ('card_number', ''),
     ('card_owner', ''),

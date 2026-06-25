@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"gopkg.in/telebot.v3"
@@ -19,7 +21,17 @@ func RegisterStart(b *telebot.Bot, auth telebot.MiddlewareFunc, admin telebot.Mi
 		}
 		return showMainMenu(c, user)
 	}, auth)
-	b.Handle("\fmenu_support", func(c telebot.Context) error { return c.Send("برای پشتیبانی لطفا با ادمین در ارتباط باشید.") }, auth)
+	b.Handle("\fmenu_support", func(c telebot.Context) error {
+		support, _ := db.GetSetting(context.Background(), "support_username")
+		support = strings.TrimSpace(support)
+		if support != "" {
+			if !strings.HasPrefix(support, "@") {
+				support = "@" + support
+			}
+			return c.Send(fmt.Sprintf("برای پشتیبانی لطفا با آی‌دی زیر در ارتباط باشید:\n%s", support))
+		}
+		return c.Send("برای پشتیبانی لطفا با ادمین در ارتباط باشید.")
+	}, auth)
 }
 
 func HandleStart(c telebot.Context) error {
@@ -96,6 +108,10 @@ func HandleText(c telebot.Context) error {
 			return ProcessSettingText(c, "unapproved_test_limit", text)
 		case "awaiting_setting_group_name":
 			return ProcessSettingText(c, "group_name", text)
+		case "awaiting_setting_test_limit":
+			return ProcessSettingText(c, "test_limit", text)
+		case "awaiting_setting_support_username":
+			return ProcessSettingText(c, "support_username", text)
 		case "awaiting_sub_rename":
 			return ProcessSubscriptionRename(c, text)
 		case "awaiting_extend_months_text":

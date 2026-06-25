@@ -144,7 +144,7 @@ func generateTestSubscription(c telebot.Context, user *db.User, planID int64, em
 	used, _ := db.GetTodayTestUsage(context.Background(), user.ID, plan.ID)
 	limit := testLimitForUser(user, plan)
 	if used >= limit {
-		return c.Send(fmt.Sprintf("محدودیت روزانه تست به پایان رسیده است. شما برای این طرح امروز مجاز به دریافت حداکثر %d تست هستید.", limit))
+		return c.Send(fmt.Sprintf("محدودیت تست‌های رایگان شما به پایان رسیده است. شما مجاز به دریافت حداکثر %d تست هستید.", limit))
 	}
 	if err := createAndSendTest(c, user, plan, email); err != nil {
 		return err
@@ -241,19 +241,17 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 }
 
 func testLimitForUser(user *db.User, plan *db.TestPlan) int {
-	if user != nil && user.IsApproved() {
-		return plan.MaxPerDay
+	limitKey := "test_limit"
+	if user != nil && !user.IsApproved() {
+		limitKey = "unapproved_test_limit"
 	}
-	limitStr, _ := db.GetSetting(context.Background(), "unapproved_test_limit")
+	limitStr, _ := db.GetSetting(context.Background(), limitKey)
 	limit, err := strconv.Atoi(strings.TrimSpace(limitStr))
 	if err != nil {
 		return 1
 	}
 	if limit < 0 {
 		return 0
-	}
-	if plan.MaxPerDay > 0 && limit > plan.MaxPerDay {
-		return plan.MaxPerDay
 	}
 	return limit
 }

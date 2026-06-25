@@ -160,7 +160,7 @@ func GetTodayTestUsage(ctx context.Context, userID int64, planID int64) (int, er
 
 	var count int
 	err := Pool.QueryRow(ctx, `
-		SELECT COALESCE((SELECT used_count FROM test_usage WHERE user_id = $1 AND plan_id = $2 AND reset_date = (NOW() AT TIME ZONE 'UTC')::DATE), 0)
+		SELECT COALESCE((SELECT used_count FROM test_usage WHERE user_id = $1 AND plan_id = $2 AND reset_date = '2000-01-01'::DATE), 0)
 	`, userID, planID).Scan(&count)
 	return count, err
 }
@@ -174,7 +174,7 @@ func IncrementTestUsage(ctx context.Context, userID int64, planID int64, increme
 	}
 	_, err := Pool.Exec(ctx, `
 		INSERT INTO test_usage (user_id, plan_id, used_count, reset_date)
-		VALUES ($1, $2, $3, (NOW() AT TIME ZONE 'UTC')::DATE)
+		VALUES ($1, $2, $3, '2000-01-01'::DATE)
 		ON CONFLICT (user_id, plan_id, reset_date)
 		DO UPDATE SET used_count = test_usage.used_count + EXCLUDED.used_count, updated_at = NOW()
 	`, userID, planID, increment)

@@ -37,28 +37,40 @@ func RegisterAdminSettings(b *telebot.Bot, auth telebot.MiddlewareFunc, admin te
 	b.Handle("\fadmin_set_unapproved_limit", func(c telebot.Context) error {
 		return settingPrompt(c, "awaiting_setting_unapproved_test_limit", "Send unapproved users daily test limit per plan. Use 0 to block.")
 	}, auth, admin)
+	b.Handle("\fadmin_set_test_limit", func(c telebot.Context) error {
+		return settingPrompt(c, "awaiting_setting_test_limit", "Send approved users test limit. Use 0 to block.")
+	}, auth, admin)
+	b.Handle("\fadmin_set_support_username", func(c telebot.Context) error {
+		return settingPrompt(c, "awaiting_setting_support_username", "Send support Telegram username (with or without @).")
+	}, auth, admin)
 	b.Handle("\fadmin_set_group_name", func(c telebot.Context) error {
 		return settingPrompt(c, "awaiting_setting_group_name", "Send group name for subscriptions.")
 	}, auth, admin)
+	b.Handle("\fadmin_reset_tests", HandleAdminResetTests, auth, admin)
 }
 
 func HandleAdminSettings(c telebot.Context) error {
-	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "unapproved_test_limit", "expiry_notify_days", "test_global_description", "group_name"}
+	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "unapproved_test_limit", "test_limit", "support_username", "expiry_notify_days", "test_global_description", "group_name"}
 	values := map[string]string{}
 	for _, key := range keys {
 		values[key], _ = db.GetSetting(context.Background(), key)
 	}
+	if values["test_limit"] == "" {
+		values["test_limit"] = "1"
+	}
 
-	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nUnapproved test limit: %s\nExpiry notify days: %s\nTest global description: %s\nGroup Name: %s",
-		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["unapproved_test_limit"], values["expiry_notify_days"], values["test_global_description"], values["group_name"])
+	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nUnapproved test limit: %s\nApproved test limit: %s\nSupport username: %s\nExpiry notify days: %s\nTest global description: %s\nGroup Name: %s",
+		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["unapproved_test_limit"], values["test_limit"], values["support_username"], values["expiry_notify_days"], values["test_global_description"], values["group_name"])
 
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
 		menu.Row(menu.Data("💳 Card", "admin_set_card"), menu.Data("👤 Owner", "admin_set_card_owner")),
 		menu.Row(menu.Data("💱 Currency", "admin_set_currency"), menu.Data("💰 Min top-up", "admin_set_min_topup")),
 		menu.Row(menu.Data("📝 Top-up text", "admin_set_topup_desc"), menu.Data("🔒 Unapproved limit", "admin_set_unapproved_limit")),
+		menu.Row(menu.Data("🔓 Approved limit", "admin_set_test_limit"), menu.Data("🆘 Support User", "admin_set_support_username")),
 		menu.Row(menu.Data("📋 Test intro", "admin_set_test_global_desc"), menu.Data("🔔 Expiry days", "admin_set_expiry_notify_days")),
 		menu.Row(menu.Data("👥 Group Name", "admin_set_group_name")),
+		menu.Row(menu.Data("🔄 Reset All User Tests", "admin_reset_tests")),
 		menu.Row(menu.Data("« Back", "admin_menu")),
 	)
 	return maybeEditOrSend(c, text, menu)
@@ -84,10 +96,10 @@ func ProcessSettingText(c telebot.Context, key string, value string) error {
 		if _, err := strconv.ParseFloat(value, 64); err != nil {
 			return c.Send("Minimum top-up must be a number.")
 		}
-	case "unapproved_test_limit":
+	case "unapproved_test_limit", "test_limit":
 		v, err := strconv.Atoi(value)
 		if err != nil || v < 0 {
-			return c.Send("Unapproved test limit must be zero or a positive integer.")
+			return c.Send("Test limit must be zero or a positive integer.")
 		}
 	case "expiry_notify_days":
 		for _, part := range strings.Split(value, ",") {
@@ -103,5 +115,17 @@ func ProcessSettingText(c telebot.Context, key string, value string) error {
 	bot.FSM.ClearState(user.TelegramID)
 	_ = c.Send("✅ Setting saved.")
 	return HandleAdminSettings(c)
+}
+
+func HandleAdminResetTests(c telebot.Context) error {
+	user := userFromContext(c)
+	if user == nil || !isConfiguredAdmin(user.TelegramID) {
+		return c.Send("Permission denied.")
+	}
+	_, err := db.Pool.Exec(context.Background(), "DELETE FROM test_usage")
+	if err != nil {
+		return c.Send("Failed to reset tests: " + err.Error())
+	}
+	return c.Respond(&telebot.CallbackResponse{Text: "✅ تمامی تست‌های کاربران با موفقیت ریست شد.", ShowAlert: true})
 }
 
