@@ -26,6 +26,7 @@ func RegisterBuySub(b *telebot.Bot, auth telebot.MiddlewareFunc) {
 	b.Handle("\fbuy_data_gb", HandleBuyDataGB, auth)
 	b.Handle("\fbuy_data_gb_custom", HandleBuyDataGBCustom, auth)
 	b.Handle("\fbuy_ip_run_limited", HandleBuyIPRunLimited, auth)
+	b.Handle("\fbuy_auto_name", HandleBuyAutoName, auth)
 }
 
 func HandleBuySubFlow(c telebot.Context) error {
@@ -316,9 +317,13 @@ func HandleBuyIPRunLimited(c telebot.Context) error {
 	if currency == "" {
 		currency = "IRR"
 	}
+	menu := &telebot.ReplyMarkup{}
+	menu.Inline(
+		menu.Row(menu.Data("🎲 انتخاب توسط ربات", "buy_auto_name")),
+	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"📦 *%s*\n%d گیگابایت، %d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\n⚠️ توجه: نام انتخابی شما باید یکتا باشد. قالب نهایی اشتراک: tg%d_<نام>\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):",
-		plan.Name, gb, months, ipLimit, price, currency, user.TelegramID))
+		"📦 *%s*\n%d گیگابایت، %d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
+		plan.Name, gb, months, ipLimit, price, currency), menu)
 }
 
 func showIPChoices(c telebot.Context, planID int64, months int) error {
@@ -399,9 +404,13 @@ func HandleBuyIPRun(c telebot.Context) error {
 	if currency == "" {
 		currency = "IRR"
 	}
+	menu := &telebot.ReplyMarkup{}
+	menu.Inline(
+		menu.Row(menu.Data("🎲 انتخاب توسط ربات", "buy_auto_name")),
+	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"📦 *%s*\n%d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\n⚠️ توجه: نام انتخابی شما باید یکتا باشد. قالب نهایی اشتراک: tg%d_<نام>\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):",
-		plan.Name, months, ipLimit, price, currency, user.TelegramID))
+		"📦 *%s*\n%d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
+		plan.Name, months, ipLimit, price, currency), menu)
 }
 
 func ProcessBuyCustomName(c telebot.Context, customName string) error {
@@ -435,9 +444,12 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 	if name == "" {
 		return c.Send("نام نامعتبر است. از حروف، اعداد یا خط تیره انگلیسی استفاده کنید.")
 	}
-	email := fmt.Sprintf("tg%d_%s", user.TelegramID, name)
-	if existing, _ := db.GetSubscriptionByEmail(context.Background(), email); existing != nil {
-		return c.Send("این نام اشتراک قبلا انتخاب شده است. لطفا نام دیگری ارسال کنید.")
+	var email string
+	for {
+		email = fmt.Sprintf("%s_%s", name, randomToken(6))
+		if existing, _ := db.GetSubscriptionByEmail(context.Background(), email); existing == nil {
+			break
+		}
 	}
 
 	price := calculatePaidPrice(plan, months, ipLimit, dataGB)
@@ -454,6 +466,7 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 		"custom_name":  name,
 		"email":        email,
 		"data_gb":      fmt.Sprintf("%d", dataGB),
+		"type":         "buy",
 	})
 
 	var dataLabel = "نامحدود"
@@ -472,6 +485,91 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 		),
 	)
 	return c.Send(fmt.Sprintf(
+		"🧾 *خلاصه فاکتور خرید*\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %d\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
+		plan.Name, email, months, ipLimit, dataLabel, price, currency,
+		user.WalletBalance, currency,
+	), menu)
+}
+
+func HandleBuyAutoName(c telebot.Context) error {
+	user := userFromContext(c)
+	if user == nil {
+		return c.Send("کاربر یافت نشد.")
+	}
+	state := bot.FSM.GetState(user.TelegramID)
+	if state == nil || state.Step != "awaiting_buy_custom_name" {
+		return c.Send("هیچ فرآیند خرید فعالی یافت نشد.")
+	}
+
+	planID, _ := parseInt64(fmt.Sprintf("%v", state.Data["plan_id"]))
+	months, _ := strconv.Atoi(fmt.Sprintf("%v", state.Data["months"]))
+	ipLimit, _ := strconv.Atoi(fmt.Sprintf("%v", state.Data["ip_limit"]))
+	dataGBVal := state.Data["data_gb"]
+	var dataGB int
+	if dataGBVal != nil {
+		dataGB, _ = strconv.Atoi(fmt.Sprintf("%v", dataGBVal))
+	}
+
+	if months <= 0 {
+		return c.Send("مدت زمان باید مثبت باشد.")
+	}
+	plan, err := db.GetPaidPlanByID(context.Background(), planID)
+	if err != nil || plan == nil || !plan.Enabled {
+		return c.Send("طرح یافت نشد.")
+	}
+
+	baseName := ""
+	if user.Username != "" {
+		baseName = user.Username
+	} else {
+		baseName = fmt.Sprintf("%d", user.TelegramID)
+	}
+	baseName = sanitizeName(baseName)
+	if baseName == "" {
+		baseName = fmt.Sprintf("%d", user.TelegramID)
+	}
+
+	var email string
+	for {
+		email = fmt.Sprintf("%s_%s", baseName, randomToken(6))
+		if existing, _ := db.GetSubscriptionByEmail(context.Background(), email); existing == nil {
+			break
+		}
+	}
+
+	price := calculatePaidPrice(plan, months, ipLimit, dataGB)
+	currency, _ := db.GetSetting(context.Background(), "currency_name")
+	if currency == "" {
+		currency = "IRR"
+	}
+
+	bot.FSM.SetState(user.TelegramID, "awaiting_buy_confirm", map[string]interface{}{
+		"plan_id":      fmt.Sprintf("%d", plan.ID),
+		"months":       fmt.Sprintf("%d", months),
+		"ip_limit":     fmt.Sprintf("%d", ipLimit),
+		"price":        fmt.Sprintf("%.2f", price),
+		"custom_name":  baseName,
+		"email":        email,
+		"data_gb":      fmt.Sprintf("%d", dataGB),
+		"type":         "buy",
+	})
+
+	var dataLabel = "نامحدود"
+	if plan.IsLimited {
+		dataLabel = fmt.Sprintf("%d گیگابایت", dataGB)
+	}
+
+	menu := &telebot.ReplyMarkup{}
+	menu.Inline(
+		menu.Row(
+			menu.Data("👛 پرداخت از کیف پول", "buy_confirm"),
+			menu.Data("💳 پرداخت مستقیم (کارت به کارت)", "buy_direct"),
+		),
+		menu.Row(
+			menu.Data("❌ انصراف", "buy_cancel"),
+		),
+	)
+	return maybeEditOrSend(c, fmt.Sprintf(
 		"🧾 *خلاصه فاکتور خرید*\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %d\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
 		plan.Name, email, months, ipLimit, dataLabel, price, currency,
 		user.WalletBalance, currency,
@@ -591,7 +689,12 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 	totalBytes := int64(dataGB) * 1073741824
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
-	client := newClientConfig(email, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, ipLimit, plan.Flow, subID, clientUUID)
+	planType := "unlimited"
+	if plan.IsLimited {
+		planType = "limited"
+	}
+	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", planType, userIdentifier(user))
+	client := newClientConfig(email, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, ipLimit, plan.Flow, subID, clientUUID, comment)
 
 	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
 	if err != nil {

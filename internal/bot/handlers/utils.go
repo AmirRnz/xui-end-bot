@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -104,10 +105,26 @@ func randomName() string {
 }
 
 func serviceGroup(user *db.User) string {
+	if group, _ := db.GetSetting(context.Background(), "group_name"); group != "" {
+		return group
+	}
 	if user == nil {
 		return "default"
 	}
 	return fmt.Sprintf("tg%d", user.TelegramID)
+}
+
+func userIdentifier(user *db.User) string {
+	if user == nil {
+		return "unknown"
+	}
+	if user.Username != "" {
+		if strings.HasPrefix(user.Username, "@") {
+			return user.Username
+		}
+		return "@" + user.Username
+	}
+	return fmt.Sprintf("%d", user.TelegramID)
 }
 
 func makeSubID() string {
@@ -186,7 +203,7 @@ func CleanFlow(flow string) string {
 	return flow
 }
 
-func newClientConfig(email, group string, telegramID int64, totalBytes int64, expiryMilli int64, limitIP int, flow string, subID string, clientUUID string) xui.ClientConfig {
+func newClientConfig(email, group string, telegramID int64, totalBytes int64, expiryMilli int64, limitIP int, flow string, subID string, clientUUID string, comment string) xui.ClientConfig {
 	if limitIP <= 0 {
 		limitIP = 1
 	}
@@ -204,7 +221,7 @@ func newClientConfig(email, group string, telegramID int64, totalBytes int64, ex
 		SubID:      subID,
 		TgID:       telegramID,
 		TotalGB:    totalBytes,
-		Comment:    "created by xui-end-bot",
+		Comment:    comment,
 		Password:   clientUUID,
 		Auth:       clientUUID,
 	}

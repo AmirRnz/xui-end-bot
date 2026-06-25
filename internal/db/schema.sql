@@ -211,7 +211,8 @@ INSERT INTO bot_settings (key, value) VALUES
     ('min_topup_amount', '0'),
     ('currency_name', 'IRR'),
     ('currency_symbol', ''),
-    ('expiry_notify_days', '3,1')
+    ('expiry_notify_days', '3,1'),
+    ('group_name', '')
 ON CONFLICT (key) DO NOTHING;
 
 ALTER TABLE IF EXISTS test_plans

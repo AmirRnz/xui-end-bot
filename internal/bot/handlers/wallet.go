@@ -433,7 +433,12 @@ func createSubscriptionFromApprovedRequest(user *db.User, plan *db.PaidPlan, req
 	totalBytes := int64(req.DataGB) * 1073741824
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
-	client := newClientConfig(req.ClientEmail, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, req.IPLimit, plan.Flow, subID, clientUUID)
+	planType := "unlimited"
+	if plan.IsLimited {
+		planType = "limited"
+	}
+	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", planType, userIdentifier(user))
+	client := newClientConfig(req.ClientEmail, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, req.IPLimit, plan.Flow, subID, clientUUID, comment)
 
 	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
 	if err != nil {

@@ -37,17 +37,20 @@ func RegisterAdminSettings(b *telebot.Bot, auth telebot.MiddlewareFunc, admin te
 	b.Handle("\fadmin_set_unapproved_limit", func(c telebot.Context) error {
 		return settingPrompt(c, "awaiting_setting_unapproved_test_limit", "Send unapproved users daily test limit per plan. Use 0 to block.")
 	}, auth, admin)
+	b.Handle("\fadmin_set_group_name", func(c telebot.Context) error {
+		return settingPrompt(c, "awaiting_setting_group_name", "Send group name for subscriptions.")
+	}, auth, admin)
 }
 
 func HandleAdminSettings(c telebot.Context) error {
-	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "unapproved_test_limit", "expiry_notify_days", "test_global_description"}
+	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "unapproved_test_limit", "expiry_notify_days", "test_global_description", "group_name"}
 	values := map[string]string{}
 	for _, key := range keys {
 		values[key], _ = db.GetSetting(context.Background(), key)
 	}
 
-	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nUnapproved test limit: %s\nExpiry notify days: %s\nTest global description: %s",
-		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["unapproved_test_limit"], values["expiry_notify_days"], values["test_global_description"])
+	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nUnapproved test limit: %s\nExpiry notify days: %s\nTest global description: %s\nGroup Name: %s",
+		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["unapproved_test_limit"], values["expiry_notify_days"], values["test_global_description"], values["group_name"])
 
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
@@ -55,6 +58,7 @@ func HandleAdminSettings(c telebot.Context) error {
 		menu.Row(menu.Data("💱 Currency", "admin_set_currency"), menu.Data("💰 Min top-up", "admin_set_min_topup")),
 		menu.Row(menu.Data("📝 Top-up text", "admin_set_topup_desc"), menu.Data("🔒 Unapproved limit", "admin_set_unapproved_limit")),
 		menu.Row(menu.Data("📋 Test intro", "admin_set_test_global_desc"), menu.Data("🔔 Expiry days", "admin_set_expiry_notify_days")),
+		menu.Row(menu.Data("👥 Group Name", "admin_set_group_name")),
 		menu.Row(menu.Data("« Back", "admin_menu")),
 	)
 	return maybeEditOrSend(c, text, menu)

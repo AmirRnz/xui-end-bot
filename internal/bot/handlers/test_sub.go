@@ -270,7 +270,8 @@ func generateMultipleTests(c telebot.Context, user *db.User, planID int64, count
 
 		subID := makeSubID()
 		clientUUID := makeClientUUID()
-		client := newClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, 1, plan.Flow, subID, clientUUID)
+		comment := fmt.Sprintf("created by xui-end-bot, test, %s", userIdentifier(user))
+		client := newClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, 1, plan.Flow, subID, clientUUID, comment)
 
 		items = append(items, xui.BulkCreateItem{
 			Client:     client,
@@ -409,7 +410,8 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	var expireAt time.Time
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
-	client := newClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, 1, plan.Flow, subID, clientUUID)
+	comment := fmt.Sprintf("created by xui-end-bot, test, %s", userIdentifier(user))
+	client := newClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, 1, plan.Flow, subID, clientUUID, comment)
 	inboundIDs := validInboundIDs(plan.InboundIDs)
 	if len(inboundIDs) == 0 {
 		return c.Send("این طرح تست هیچ کانکشن معتبری ندارد.")

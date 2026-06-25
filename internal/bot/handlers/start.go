@@ -94,6 +94,8 @@ func HandleText(c telebot.Context) error {
 			return ProcessSettingText(c, "expiry_notify_days", text)
 		case "awaiting_setting_unapproved_test_limit":
 			return ProcessSettingText(c, "unapproved_test_limit", text)
+		case "awaiting_setting_group_name":
+			return ProcessSettingText(c, "group_name", text)
 		case "awaiting_sub_rename":
 			return ProcessSubscriptionRename(c, text)
 		case "awaiting_extend_months_text":

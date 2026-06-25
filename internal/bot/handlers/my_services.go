@@ -927,7 +927,16 @@ func clientConfigFromSubscription(sub *db.Subscription, email string) xui.Client
 			total = traffic.Total
 		}
 	}
-	client := newClientConfig(email, group, tgID, total, expireMilli, sub.IPLimit, flow, sub.SubID, sub.ClientUUID)
+	planType := "unlimited"
+	if sub.PlanType == db.PlanTypeTest {
+		planType = "test"
+	} else if sub.PlanID != nil {
+		if plan, _ := db.GetPaidPlanByID(context.Background(), int64(*sub.PlanID)); plan != nil && plan.IsLimited {
+			planType = "limited"
+		}
+	}
+	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", planType, userIdentifier(user))
+	client := newClientConfig(email, group, tgID, total, expireMilli, sub.IPLimit, flow, sub.SubID, sub.ClientUUID, comment)
 	return client
 }
 
