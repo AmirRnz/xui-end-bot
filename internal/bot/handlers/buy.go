@@ -698,11 +698,7 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 	totalBytes := int64(dataGB) * 1073741824
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
-	planType := "unlimited"
-	if plan.IsLimited {
-		planType = "limited"
-	}
-	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", planType, userIdentifier(user))
+	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", plan.Name, userIdentifier(user))
 	client := newClientConfig(email, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, ipLimit, plan.Flow, subID, clientUUID, comment)
 
 	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})

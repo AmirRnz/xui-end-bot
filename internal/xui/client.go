@@ -310,3 +310,12 @@ func (c *Client) BulkCreate(req []BulkCreateItem) (*BulkCreateResponse, error) {
 	return &resp, nil
 }
 
+func (c *Client) ListClients() ([]XUIClientInfo, error) {
+	var clients []XUIClientInfo
+	if err := c.doRequest("GET", "/panel/api/clients/list", nil, &clients); err != nil {
+		return nil, err
+	}
+	return clients, nil
+}
+
+

@@ -165,7 +165,7 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	var expireAt time.Time
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
-	comment := fmt.Sprintf("created by xui-end-bot, test, %s", userIdentifier(user))
+	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", plan.Name, userIdentifier(user))
 	client := newClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, 1, plan.Flow, subID, clientUUID, comment)
 	inboundIDs := validInboundIDs(plan.InboundIDs)
 	if len(inboundIDs) == 0 {

@@ -88,3 +88,17 @@ type ClientTraffic struct {
 	UUID       string `json:"uuid"`
 	LastOnline int64  `json:"lastOnline"`
 }
+
+type XUIClientInfo struct {
+	ID         int    `json:"id"`
+	Email      string `json:"email"`
+	SubID      string `json:"subId"`
+	UUID       string `json:"uuid"`
+	Password   string `json:"password"`
+	TotalGB    int64  `json:"totalGB"`
+	ExpiryTime int64  `json:"expiryTime"`
+	Enable     bool   `json:"enable"`
+	InboundIDs []int  `json:"inboundIds"`
+	LimitIP    int    `json:"limitIp"`
+}
+

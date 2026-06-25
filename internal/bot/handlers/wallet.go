@@ -27,6 +27,7 @@ func RegisterWallet(b *telebot.Bot, auth telebot.MiddlewareFunc, admin telebot.M
 	b.Handle("\fadmin_reject_topup", HandleAdminRejectTopup, auth, admin)
 	b.Handle("\fadmin_approve_purchase", HandleAdminApprovePurchase, auth, admin)
 	b.Handle("\fadmin_reject_purchase", HandleAdminRejectPurchase, auth, admin)
+	b.Handle("\fadmin_claim_assign", HandleAdminClaimAssign, auth, admin)
 	b.Handle(telebot.OnPhoto, HandleReceiptPhoto, auth)
 }
 
@@ -411,6 +412,8 @@ func HandleAdminRejectPurchase(c telebot.Context) error {
 			actionLabel = "تمدید سرویس"
 		case "upgrade_ip":
 			actionLabel = "ارتقای تعداد کاربر همزمان"
+		case "claim":
+			actionLabel = "ثبت اشتراک قدیمی"
 		}
 		msg := fmt.Sprintf("❌ درخواست پرداخت مستقیم شما برای *%s* به مبلغ %.0f توسط ادمین رد شد. لطفا رسید واریزی خود را بررسی کنید یا با پشتیبانی در ارتباط باشید.", actionLabel, req.Price)
 		_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, msg)
@@ -433,11 +436,7 @@ func createSubscriptionFromApprovedRequest(user *db.User, plan *db.PaidPlan, req
 	totalBytes := int64(req.DataGB) * 1073741824
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
-	planType := "unlimited"
-	if plan.IsLimited {
-		planType = "limited"
-	}
-	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", planType, userIdentifier(user))
+	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", plan.Name, userIdentifier(user))
 	client := newClientConfig(req.ClientEmail, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, req.IPLimit, plan.Flow, subID, clientUUID, comment)
 
 	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
@@ -628,4 +627,166 @@ func ProcessManualCreditAmount(c telebot.Context, amountText string) error {
 	}
 	return nil
 }
+
+func HandleAdminClaimAssign(c telebot.Context) error {
+	if !isConfiguredAdmin(c.Sender().ID) {
+		return c.Send("شما دسترسی لازم برای این کار را ندارید.")
+	}
+	parts := strings.Split(callbackPayload(c), "|")
+	if len(parts) != 2 {
+		return c.Send("درخواست نامعتبر.")
+	}
+	reqID, err := parseInt64(parts[0])
+	if err != nil || reqID == 0 {
+		return c.Send("شناسه درخواست نامعتبر.")
+	}
+	planID, err := parseInt64(parts[1])
+	if err != nil || planID == 0 {
+		return c.Send("شناسه طرح نامعتبر.")
+	}
+
+	unlock := bot.Locker.Lock(fmt.Sprintf("purchase_req:%d", reqID))
+	defer unlock()
+
+	req, err := db.GetPurchaseRequestByID(context.Background(), reqID)
+	if err != nil || req == nil || req.Status != "pending" {
+		return c.Send("درخواست یافت نشد یا قبلا پردازش شده است.")
+	}
+
+	user, err := db.GetUserByID(context.Background(), req.UserID)
+	if err != nil || user == nil {
+		return c.Send("کاربر یافت نشد.")
+	}
+
+	plan, err := db.GetPaidPlanByID(context.Background(), planID)
+	if err != nil || plan == nil {
+		return c.Send("طرح مورد نظر یافت نشد.")
+	}
+
+	// Update plan_id in purchase request before approving
+	_, err = db.Pool.Exec(context.Background(), "UPDATE purchase_requests SET plan_id = $1 WHERE id = $2", plan.ID, req.ID)
+	if err != nil {
+		return c.Send("خطا در بروزرسانی طرح درخواست در دیتابیس.")
+	}
+
+	adminUser := userFromContext(c)
+	req, err = db.ApprovePurchaseRequest(context.Background(), req.ID, adminUser.TelegramID)
+	if err != nil || req == nil {
+		return c.Send("خطا در تایید درخواست ثبت اشتراک.")
+	}
+
+	// Actually link and sync the subscription
+	err = createSubscriptionFromApprovedClaim(user, plan, req)
+	if err != nil {
+		log.Printf("[CRITICAL] Claim activation failed for request #%d: %v", req.ID, err)
+		// rollback
+		_, _ = db.Pool.Exec(context.Background(), "UPDATE purchase_requests SET status = 'pending', admin_id = NULL WHERE id = $1", req.ID)
+		return c.Send("خطا در فعال سازی اشتراک: " + err.Error() + ". وضعیت درخواست به حالت در انتظار برگشت داده شد.")
+	}
+
+	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("✅ درخواست ثبت اشتراک #%d تایید شد.", req.ID)})
+	return c.Edit(fmt.Sprintf("✅ درخواست ثبت اشتراک #%d تایید شد و طرح %s اختصاص یافت.", req.ID, plan.Name))
+}
+
+func createSubscriptionFromApprovedClaim(user *db.User, plan *db.PaidPlan, req *db.PurchaseRequest) error {
+	if bot.XUIClient == nil {
+		return fmt.Errorf("x-ui client is not initialized")
+	}
+
+	// Fetch all clients from 3x-ui to find the matching client by SubID (stored in req.CustomName)
+	clients, err := bot.XUIClient.ListClients()
+	if err != nil {
+		return fmt.Errorf("failed to fetch client list from panel: %w", err)
+	}
+
+	var targetClient *xui.XUIClientInfo
+	for _, client := range clients {
+		if client.SubID == req.CustomName {
+			targetClient = &client
+			break
+		}
+	}
+
+	if targetClient == nil {
+		return fmt.Errorf("client with sub ID %s not found on panel", req.CustomName)
+	}
+
+	// Check if this email is already registered in DB (avoid UNIQUE violation)
+	existing, _ := db.GetSubscriptionByEmail(context.Background(), targetClient.Email)
+	if existing != nil {
+		return fmt.Errorf("subscription with email %s already registered in database", targetClient.Email)
+	}
+
+	// Map client values
+	var expireMilli int64 = targetClient.ExpiryTime
+	var trafficLimitBytes int64 = targetClient.TotalGB // TotalGB is bytes limit in 3x-ui
+	var endDate time.Time
+	if expireMilli > 0 {
+		endDate = time.UnixMilli(expireMilli)
+	}
+
+	planID := int(plan.ID)
+	ipLimit := targetClient.LimitIP
+	if ipLimit <= 0 {
+		ipLimit = 1
+	}
+
+	clientUUID := targetClient.UUID
+	if clientUUID == "" {
+		clientUUID = targetClient.Password
+	}
+
+	sub := &db.Subscription{
+		UserID:            user.ID,
+		PlanID:            &planID,
+		ClientEmail:       targetClient.Email,
+		ClientUUID:        clientUUID,
+		SubID:             targetClient.SubID,
+		Status:            "active",
+		PlanType:          db.PlanTypePaid,
+		DisplayName:       targetClient.Email,
+		IPLimit:           ipLimit,
+		ExpireTime:        &expireMilli,
+		IsActive:          targetClient.Enable,
+		StartDate:         time.Now().UTC(),
+		EndDate:           endDate,
+		TrafficLimitBytes: trafficLimitBytes,
+	}
+
+	if err := db.CreateSubscription(context.Background(), sub); err != nil {
+		return fmt.Errorf("failed to save subscription in database: %w", err)
+	}
+
+	// Update the client on the panel to set tgId and add the comment with the plan name!
+	if err := updateXUIFromSubscription(sub); err != nil {
+		log.Printf("[WARNING] Failed to update client %s on panel upon claim approval: %v", sub.ClientEmail, err)
+		// We do not fail the whole approval process if just updating the panel comment/tgId fails,
+		// as the DB record is already created and client is functional.
+	}
+
+	// Send success notification to the user
+	targetUser := &telebot.User{ID: user.TelegramID}
+	successMsg := fmt.Sprintf("✅ درخواست ثبت اشتراک شما تایید شد.\n\nسرویس *%s* به لیست سرویس‌های شما اضافه شد و اکنون می‌توانید آن را مدیریت کنید.", sub.ClientEmail)
+	_, _ = bot.Bot.Send(targetUser, successMsg, telebot.ModeMarkdown)
+
+	// Send subscription connection details to user (QR and link)
+	links, err := bot.XUIClient.GetSubscriptionLinks(sub.SubID)
+	var subLink string
+	if err == nil {
+		for _, l := range links {
+			if strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") {
+				subLink = l
+				break
+			}
+		}
+	}
+	if subLink == "" {
+		subLink = bot.XUIClient.SubscriptionURLFor(sub.SubID)
+	}
+	detailsMsg := fmt.Sprintf("🔗 اشتراک: *%s*\n📅 تاریخ انقضا: %s", sub.DisplayName, sub.EndDate.Format("2006-01-02 15:04 UTC"))
+	_ = sendSubscriptionResultTo(user.TelegramID, subLink, detailsMsg)
+
+	return nil
+}
+
 

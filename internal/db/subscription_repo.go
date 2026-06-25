@@ -310,3 +310,16 @@ func scanSubscriptionRow(row pgx.Row) (*Subscription, error) {
 	}
 	return s, nil
 }
+
+func GetSubscriptionBySubID(ctx context.Context, subID string) (*Subscription, error) {
+	ctx, cancel := dbCtx(ctx)
+	defer cancel()
+
+	row := Pool.QueryRow(ctx, subscriptionSelect()+` WHERE sub_id = $1`, subID)
+	s, err := scanSubscriptionRow(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return s, err
+}
+
