@@ -71,6 +71,29 @@ func showServicesPage(c telebot.Context, page int) error {
 	}
 	subs = paidSubs
 
+	if bot.XUIClient != nil {
+		clients, err := bot.XUIClient.ListClients()
+		if err == nil {
+			existingClients := make(map[string]bool)
+			for _, client := range clients {
+				if client.SubID != "" {
+					existingClients[client.SubID] = true
+				}
+			}
+
+			var activeSubs []*db.Subscription
+			for _, sub := range subs {
+				if existingClients[sub.SubID] {
+					activeSubs = append(activeSubs, sub)
+				} else {
+					log.Printf("Deleting orphan subscription %s (SubID: %s) from DB because it no longer exists on 3x-ui.", sub.ClientEmail, sub.SubID)
+					_ = db.DeleteSubscription(context.Background(), sub.ID)
+				}
+			}
+			subs = activeSubs
+		}
+	}
+
 	if len(subs) == 0 {
 		menu := &telebot.ReplyMarkup{}
 		menu.Inline(
