@@ -632,7 +632,7 @@ func HandleAdminClaimAssign(c telebot.Context) error {
 	if !isConfiguredAdmin(c.Sender().ID) {
 		return c.Send("شما دسترسی لازم برای این کار را ندارید.")
 	}
-	parts := strings.Split(callbackPayload(c), "|")
+	parts := strings.Split(callbackPayload(c), ":")
 	if len(parts) != 2 {
 		return c.Send("درخواست نامعتبر.")
 	}
@@ -788,5 +788,58 @@ func createSubscriptionFromApprovedClaim(user *db.User, plan *db.PaidPlan, req *
 
 	return nil
 }
+
+func HandleAdminPendingClaims(c telebot.Context) error {
+	if !isConfiguredAdmin(c.Sender().ID) {
+		return c.Send("شما دسترسی لازم برای این کار را ندارید.")
+	}
+	reqs, err := db.GetPendingPurchaseRequests(context.Background())
+	if err != nil {
+		return c.Send("خطا در دریافت درخواست‌ها.")
+	}
+
+	var claimReqs []*db.PurchaseRequest
+	for _, r := range reqs {
+		if r.Type == "claim" {
+			claimReqs = append(claimReqs, r)
+		}
+	}
+
+	if len(claimReqs) == 0 {
+		return c.Send("هیچ درخواست ثبت اشتراک دستی در انتظاری وجود ندارد.")
+	}
+
+	paidPlans, err := db.GetPaidPlans(context.Background(), false)
+	if err != nil {
+		log.Printf("Failed to fetch paid plans: %v", err)
+	}
+
+	for _, req := range claimReqs {
+		user, _ := db.GetUserByID(context.Background(), req.UserID)
+		username := "unknown"
+		if user != nil {
+			username = user.Username
+		}
+
+		menu := &telebot.ReplyMarkup{}
+		var rows []telebot.Row
+		for _, plan := range paidPlans {
+			rows = append(rows, menu.Row(
+				menu.Data(fmt.Sprintf("طرح: %s", plan.Name), "admin_claim_assign", fmt.Sprintf("%d:%d", req.ID, plan.ID)),
+			))
+		}
+		rows = append(rows, menu.Row(
+			menu.Data("❌ رد درخواست", "admin_reject_purchase", fmt.Sprintf("%d", req.ID)),
+		))
+		menu.Inline(rows...)
+
+		caption := fmt.Sprintf("📥 *درخواست ثبت اشتراک دستی #%d*\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %d\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
+			req.ID, username, req.UserID, req.ClientEmail, req.CustomName, req.IPLimit, req.DataGB)
+
+		_, _ = bot.Bot.Send(c.Sender(), caption, menu, telebot.ModeMarkdown)
+	}
+	return nil
+}
+
 
 

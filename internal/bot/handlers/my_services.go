@@ -990,7 +990,7 @@ func ProcessClaimSubscriptionLink(c telebot.Context, text string) error {
 			var rows []telebot.Row
 			for _, plan := range paidPlans {
 				rows = append(rows, menu.Row(
-					menu.Data(fmt.Sprintf("طرح: %s", plan.Name), "admin_claim_assign", fmt.Sprintf("%d|%d", req.ID, plan.ID)),
+					menu.Data(fmt.Sprintf("طرح: %s", plan.Name), "admin_claim_assign", fmt.Sprintf("%d:%d", req.ID, plan.ID)),
 				))
 			}
 			rows = append(rows, menu.Row(
