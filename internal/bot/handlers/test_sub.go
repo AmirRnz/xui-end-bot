@@ -43,13 +43,8 @@ func HandleTestSubFlow(c telebot.Context) error {
 		return maybeEditOrSend(c, "در حال حاضر هیچ طرح تستی موجود نیست.")
 	}
 
-	globalDesc, _ := db.GetSetting(context.Background(), "test_global_description")
 	var text strings.Builder
-	text.WriteString("🧪 *اشتراک‌های تست رایگان*\n\n")
-	if strings.TrimSpace(globalDesc) != "" {
-		text.WriteString(globalDesc)
-		text.WriteString("\n\n")
-	}
+	text.WriteString("🧪 *اشتراک‌های تست رایگان*:\n\n")
 
 	menu := &telebot.ReplyMarkup{}
 	rows := make([]telebot.Row, 0, len(plans)+1)
@@ -60,12 +55,19 @@ func HandleTestSubFlow(c telebot.Context) error {
 		if remaining < 0 {
 			remaining = 0
 		}
-		desc := plan.Description
-		if desc == "" {
-			desc = humanDuration(plan.ExpireSeconds)
+		var dataLimitStr string
+		if plan.MaxDataBytes == 0 {
+			dataLimitStr = "نامحدود"
+		} else {
+			dataLimitStr = fmt.Sprintf("%.2f گیگابایت", float64(plan.MaxDataBytes)/1073741824)
 		}
-		text.WriteString(fmt.Sprintf("📦 *%s* — %s\nمصرف امروز: %d از %d (بازنشانی ساعت %s UTC)\n\n",
-			plan.Name, desc, used, limit, nextUTCReset()))
+		durationStr := humanDuration(plan.ExpireSeconds)
+		text.WriteString(fmt.Sprintf("📦 *%s*\n⏱️ مدت اعتبار: %s (پس از اولین اتصال)\n📊 حجم مجاز: %s\n🔄 مصرف امروز شما: %d از %d (ساعت بازنشانی %s UTC)\n",
+			plan.Name, durationStr, dataLimitStr, used, limit, nextUTCReset()))
+		if plan.Description != "" {
+			text.WriteString(fmt.Sprintf("%s\n", plan.Description))
+		}
+		text.WriteString("\n")
 		btnLabel := fmt.Sprintf("%s (%d از %d باقی‌مانده)", plan.Name, remaining, limit)
 		rows = append(rows, menu.Row(menu.Data(btnLabel, "select_test_plan", fmt.Sprintf("%d", plan.ID))))
 	}

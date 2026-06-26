@@ -28,9 +28,6 @@ func RegisterAdminSettings(b *telebot.Bot, auth telebot.MiddlewareFunc, admin te
 	b.Handle("\fadmin_set_topup_desc", func(c telebot.Context) error {
 		return settingPrompt(c, "awaiting_setting_topup_description", "Send top-up instructions text.")
 	}, auth, admin)
-	b.Handle("\fadmin_set_test_global_desc", func(c telebot.Context) error {
-		return settingPrompt(c, "awaiting_setting_test_global_description", "Send the global description shown above all test plans.")
-	}, auth, admin)
 	b.Handle("\fadmin_set_expiry_notify_days", func(c telebot.Context) error {
 		return settingPrompt(c, "awaiting_setting_expiry_notify_days", "Send expiry notification days as comma-separated values, e.g. 3,1.")
 	}, auth, admin)
@@ -50,7 +47,7 @@ func RegisterAdminSettings(b *telebot.Bot, auth telebot.MiddlewareFunc, admin te
 }
 
 func HandleAdminSettings(c telebot.Context) error {
-	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "unapproved_test_limit", "test_limit", "support_username", "expiry_notify_days", "test_global_description", "group_name"}
+	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "unapproved_test_limit", "test_limit", "support_username", "expiry_notify_days", "group_name"}
 	values := map[string]string{}
 	for _, key := range keys {
 		values[key], _ = db.GetSetting(context.Background(), key)
@@ -59,8 +56,8 @@ func HandleAdminSettings(c telebot.Context) error {
 		values["test_limit"] = "1"
 	}
 
-	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nUnapproved test limit: %s\nApproved test limit: %s\nSupport username: %s\nExpiry notify days: %s\nTest global description: %s\nGroup Name: %s",
-		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["unapproved_test_limit"], values["test_limit"], values["support_username"], values["expiry_notify_days"], values["test_global_description"], values["group_name"])
+	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nUnapproved test limit: %s\nApproved test limit: %s\nSupport username: %s\nExpiry notify days: %s\nGroup Name: %s",
+		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["unapproved_test_limit"], values["test_limit"], values["support_username"], values["expiry_notify_days"], values["group_name"])
 
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
@@ -68,7 +65,7 @@ func HandleAdminSettings(c telebot.Context) error {
 		menu.Row(menu.Data("💱 Currency", "admin_set_currency"), menu.Data("💰 Min top-up", "admin_set_min_topup")),
 		menu.Row(menu.Data("📝 Top-up text", "admin_set_topup_desc"), menu.Data("🔒 Unapproved limit", "admin_set_unapproved_limit")),
 		menu.Row(menu.Data("🔓 Approved limit", "admin_set_test_limit"), menu.Data("🆘 Support User", "admin_set_support_username")),
-		menu.Row(menu.Data("📋 Test intro", "admin_set_test_global_desc"), menu.Data("🔔 Expiry days", "admin_set_expiry_notify_days")),
+		menu.Row(menu.Data("🔔 Expiry days", "admin_set_expiry_notify_days")),
 		menu.Row(menu.Data("👥 Group Name", "admin_set_group_name")),
 		menu.Row(menu.Data("🔄 Reset All User Tests", "admin_reset_tests")),
 		menu.Row(menu.Data("« Back", "admin_menu")),
