@@ -53,7 +53,7 @@ func HandleAdminSettings(c telebot.Context) error {
 		values["test_reset_days"] = "30"
 	}
 
-	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nTest reset days: %s\nSupport username: %s\nExpiry notify days: %s\nGroup Name: %s",
+	text := fmt.Sprintf("⚙️ **Settings**\n\n💳 Card: %s\n👤 Owner: %s\n💱 Currency: %s\n💰 Minimum top-up: %s\n⏱️ Test reset days: %s\n🆘 Support username: %s\n🔔 Expiry notify days: %s\n👥 Group Name: %s",
 		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["test_reset_days"], values["support_username"], values["expiry_notify_days"], values["group_name"])
 
 	menu := &telebot.ReplyMarkup{}

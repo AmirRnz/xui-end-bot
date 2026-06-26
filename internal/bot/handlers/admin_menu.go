@@ -27,7 +27,7 @@ func HandleAdminMenu(c telebot.Context) error {
 			menu.Data("🔍 Pending Claims", "admin_pending_claims"),
 		),
 	)
-	return maybeEditOrSend(c, "⚙️ *Admin Panel*", menu)
+	return maybeEditOrSend(c, "⚙️ **Admin Panel**", menu)
 }
 
 func HandleAdminFlow(c telebot.Context) error {

@@ -28,7 +28,7 @@ func HandleAdminStats(c telebot.Context) error {
 	}
 
 	text := fmt.Sprintf(
-		"📊 *Bot Statistics*\n\n"+
+		"📊 **Bot Statistics**\n\n"+
 			"👥 Total users: %d\n"+
 			"✅ Approved users: %d\n"+
 			"📦 Active subscriptions: %d\n"+

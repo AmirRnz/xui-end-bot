@@ -44,7 +44,7 @@ func HandleTestSubFlow(c telebot.Context) error {
 	}
 
 	var text strings.Builder
-	text.WriteString("🧪 *اشتراک‌های تست رایگان*:\n\n")
+	text.WriteString("🧪 **اشتراک‌های تست رایگان**:\n\n")
 
 	menu := &telebot.ReplyMarkup{}
 	rows := make([]telebot.Row, 0, len(plans)+1)
@@ -78,7 +78,7 @@ func HandleTestSubFlow(c telebot.Context) error {
 			dataLimitStr = fmt.Sprintf("%.2f گیگابایت", float64(plan.MaxDataBytes)/1073741824)
 		}
 		durationStr := humanDuration(plan.ExpireSeconds)
-		text.WriteString(fmt.Sprintf("📦 *%s*\n⏱️ مدت اعتبار: %s (پس از اولین اتصال)\n📊 حجم مجاز: %s\n🔄 وضعیت: %s\n",
+		text.WriteString(fmt.Sprintf("📦 **%s**\n⏱️ مدت اعتبار: %s (پس از اولین اتصال)\n📊 حجم مجاز: %s\n🔄 وضعیت: %s\n",
 			plan.Name, durationStr, dataLimitStr, statusText))
 		if plan.Description != "" {
 			text.WriteString(fmt.Sprintf("%s\n", plan.Description))

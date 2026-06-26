@@ -224,7 +224,7 @@ func newClientConfig(email, group string, telegramID int64, totalBytes int64, ex
 
 func sendSubscriptionResult(c telebot.Context, link string, detailsMsg string) error {
 	if link == "" {
-		return c.Send(detailsMsg + "\nNo subscription link was found.")
+		return c.Send(FormatMarkdown(detailsMsg)+"\nNo subscription link was found.", telebot.ModeMarkdown)
 	}
 
 	// Send QR code photo with the link as caption (formatted to be copyable on click)
@@ -241,7 +241,7 @@ func sendSubscriptionResult(c telebot.Context, link string, detailsMsg string) e
 
 	// Send details message
 	if detailsMsg != "" {
-		_ = c.Send(detailsMsg)
+		_ = c.Send(FormatMarkdown(detailsMsg), telebot.ModeMarkdown)
 	}
 	return nil
 }
@@ -266,18 +266,92 @@ func sendSubscriptionResultTo(recipientID int64, link string, detailsMsg string)
 	}
 
 	if detailsMsg != "" {
-		_, _ = bot.Bot.Send(user, detailsMsg)
+		_, _ = bot.Bot.Send(user, FormatMarkdown(detailsMsg), telebot.ModeMarkdown)
 	}
 	return nil
 }
 
 func maybeEditOrSend(c telebot.Context, text string, opts ...interface{}) error {
+	var hasParseMode bool
+	for _, opt := range opts {
+		if _, ok := opt.(telebot.ParseMode); ok {
+			hasParseMode = true
+			break
+		}
+	}
+	formattedText := FormatMarkdown(text)
+	if !hasParseMode {
+		opts = append(opts, telebot.ModeMarkdown)
+	}
+
 	if c.Callback() != nil {
-		if err := c.Edit(text, opts...); err == nil {
+		if err := c.Edit(formattedText, opts...); err == nil {
 			return nil
 		}
 	}
-	return c.Send(text, opts...)
+	return c.Send(formattedText, opts...)
+}
+
+// FormatMarkdown formats a standard markdown string to Telegram legacy Markdown format.
+// It converts double asterisks (**) to single asterisks (*) for bold text,
+// preserves code blocks (```) and code spans (`),
+// and escapes unescaped markdown characters like _, *, and [ to prevent Telegram parsing errors.
+func FormatMarkdown(input string) string {
+	var result strings.Builder
+	runes := []rune(input)
+	n := len(runes)
+
+	insideCodeBlock := false
+	insideCodeSpan := false
+	insideBold := false
+
+	for i := 0; i < n; i++ {
+		// Code block (```)
+		if i+2 < n && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
+			insideCodeBlock = !insideCodeBlock
+			result.WriteString("```")
+			i += 2
+			continue
+		}
+
+		if insideCodeBlock {
+			result.WriteRune(runes[i])
+			continue
+		}
+
+		// Code span (`)
+		if runes[i] == '`' {
+			insideCodeSpan = !insideCodeSpan
+			result.WriteRune('`')
+			continue
+		}
+
+		if insideCodeSpan {
+			result.WriteRune(runes[i])
+			continue
+		}
+
+		// Bold (**)
+		if runes[i] == '*' && i+1 < n && runes[i+1] == '*' {
+			insideBold = !insideBold
+			result.WriteRune('*') // Convert ** to * for Telegram Markdown V1
+			i++
+			continue
+		}
+
+		// Escape unescaped markdown entities when not inside code blocks or code spans
+		if runes[i] == '_' {
+			result.WriteString("\\_")
+		} else if runes[i] == '*' {
+			result.WriteString("\\*")
+		} else if runes[i] == '[' {
+			result.WriteString("\\[")
+		} else {
+			result.WriteRune(runes[i])
+		}
+	}
+
+	return result.String()
 }
 
 func userFromContext(c telebot.Context) *db.User {

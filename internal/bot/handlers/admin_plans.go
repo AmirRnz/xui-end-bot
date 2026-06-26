@@ -42,7 +42,7 @@ func HandleAdminPlans(c telebot.Context) error {
 	inboundNames := cachedInboundNames()
 
 	var text strings.Builder
-	text.WriteString("📋 *Plans*\n\n")
+	text.WriteString("📋 **Plans**\n\n")
 	text.WriteString("🧪 Test plans:\n")
 	for _, p := range testPlans {
 		enabledMark := "✅"
@@ -242,7 +242,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 		dataLabel = fmt.Sprintf("%.2f GB", float64(maxDataBytes)/1073741824)
 	}
 
-	text := fmt.Sprintf("🧪 *Draft Test Plan Config*\n\n"+
+	text := fmt.Sprintf("🧪 **Draft Test Plan Config**\n\n"+
 		"📝 Name: %s\n"+
 		"📝 Description: %s\n"+
 		"📡 Inbounds: %s\n"+
@@ -306,7 +306,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		priceBlock = fmt.Sprintf("💵 Base Price: %.0f\n", basePrice)
 	}
 
-	text := fmt.Sprintf("💼 *Draft Paid Plan Config*\n\n"+
+	text := fmt.Sprintf("💼 **Draft Paid Plan Config**\n\n"+
 		"📝 Name: %s\n"+
 		"📝 Description: %s\n"+
 		"📡 Inbounds: %s\n"+
@@ -418,7 +418,7 @@ func HandleAdminDraftEdit(c telebot.Context) error {
 			menu.Row(menu.Data("⬅️ Back", "admin_draft_set_flow", editingType+":back")),
 		)
 		currentFlow := draftGetString(draft, "flow")
-		prompt := fmt.Sprintf("⚡ *Select Flow Option*:\n\n*Current*: %s", nonEmpty(currentFlow, "(default/none)"))
+		prompt := fmt.Sprintf("⚡ **Select Flow Option**:\n\n**Current**: %s", nonEmpty(currentFlow, "(default/none)"))
 		return maybeEditOrSend(c, prompt, menu)
 	}
 
@@ -1006,7 +1006,7 @@ func showAdminDraftInboundsMenu(c telebot.Context, planType string, draft map[st
 	}
 
 	var text strings.Builder
-	text.WriteString("📡 *Select Inbounds for Plan*\n\n")
+	text.WriteString("📡 **Select Inbounds for Plan**\n\n")
 	text.WriteString("Toggle the inbounds you want to attach to this plan. You can use 'Select All' to mark all, and then uncheck any individual inbounds.\n\n")
 	text.WriteString("Current Selection:\n")
 	
@@ -1203,7 +1203,7 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 		}
 		enabled = plan.Enabled
 		access, _ := db.GetPlanUserAccess(context.Background(), planType, planID)
-		text = fmt.Sprintf("🧪 *Test plan #%d*\n"+
+		text = fmt.Sprintf("🧪 **Test plan #%d**\n"+
 			"Name: %s\nDescription: %s\nEnabled: %t\nGlobal: %t\n"+
 			"Inbounds: %s\nDuration: %s\nMax data: %.2f GB\n"+
 			"Flow: %s\nMax/day: %d\nPrivate users: %v",
@@ -1225,7 +1225,7 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 			priceBlock = fmt.Sprintf("Type: Unlimited\nBase price: %.0f", plan.BasePrice)
 		}
 
-		text = fmt.Sprintf("💼 *Paid plan #%d*\n"+
+		text = fmt.Sprintf("💼 **Paid plan #%d**\n"+
 			"Name: %s\nDescription: %s\nEnabled: %t\nGlobal: %t\n"+
 			"Inbounds: %s\n%s\nIP: %d-%d\n"+
 			"Extra IP: %.0f\nFlow: %s\nDiscounts: %+v\nPrivate users: %v",

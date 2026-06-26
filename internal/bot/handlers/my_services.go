@@ -117,7 +117,7 @@ func showServicesPage(c telebot.Context, page int) error {
 	}
 
 	var text strings.Builder
-	text.WriteString(fmt.Sprintf("📋 *سرویس‌های من* (صفحه %d از %d)\n\n", page+1, totalPages))
+	text.WriteString(fmt.Sprintf("📋 **سرویس‌های من** (صفحه %d از %d)\n\n", page+1, totalPages))
 	menu := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
 	for _, sub := range subs[start:end] {
@@ -220,13 +220,13 @@ func showSubscriptionDetail(c telebot.Context, user *db.User, sub *db.Subscripti
 	}
 
 	var text strings.Builder
-	text.WriteString(fmt.Sprintf("📦 *%s*\n", sub.DisplayName))
-	text.WriteString(fmt.Sprintf("ایمیل اشتراک: `%s`\n", sub.ClientEmail))
-	text.WriteString(fmt.Sprintf("وضعیت سرویس: %s\n", statusIcon))
-	text.WriteString(fmt.Sprintf("کاربر همزمان: %d\n", sub.IPLimit))
-	text.WriteString(expiryStr + "\n")
+	text.WriteString(fmt.Sprintf("📦 **%s**\n\n", sub.DisplayName))
+	text.WriteString(fmt.Sprintf("📧 **ایمیل اشتراک:** `%s`\n", sub.ClientEmail))
+	text.WriteString(fmt.Sprintf("⚡ **وضعیت سرویس:** %s\n", statusIcon))
+	text.WriteString(fmt.Sprintf("👥 **کاربر همزمان:** %d\n", sub.IPLimit))
+	text.WriteString("⏳ " + expiryStr + "\n")
 	if trafficStr != "" {
-		text.WriteString(trafficStr)
+		text.WriteString("📊 " + trafficStr)
 	}
 
 	menu := &telebot.ReplyMarkup{}
@@ -271,7 +271,7 @@ func HandleGetLink(c telebot.Context) error {
 	if subLink == "" {
 		subLink = bot.XUIClient.SubscriptionURLFor(sub.SubID)
 	}
-	detailsMsg := fmt.Sprintf("🔗 اشتراک: *%s*\n📅 تاریخ انقضا: %s", sub.DisplayName, sub.EndDate.Format("2006-01-02 15:04 UTC"))
+	detailsMsg := fmt.Sprintf("🔗 اشتراک: **%s**\n📅 تاریخ انقضا: %s", sub.DisplayName, sub.EndDate.Format("2006-01-02 15:04 UTC"))
 	return sendSubscriptionResult(c, subLink, detailsMsg)
 }
 
@@ -338,7 +338,7 @@ func HandleSubscriptionLimitMenu(c telebot.Context) error {
 	}
 	rows = append(rows, menu.Row(menu.Data("« بازگشت", "view_sub", fmt.Sprintf("%d", sub.ID))))
 	menu.Inline(rows...)
-	return maybeEditOrSend(c, fmt.Sprintf("📶 ارتقای تعداد کاربران همزمان برای *%s*\nتعداد فعلی: %d کاربر", sub.DisplayName, sub.IPLimit), menu)
+	return maybeEditOrSend(c, fmt.Sprintf("📶 ارتقای تعداد کاربران همزمان برای **%s**\nتعداد فعلی: %d کاربر", sub.DisplayName, sub.IPLimit), menu)
 }
 
 func HandleSubscriptionLimitConfirmPrompt(c telebot.Context) error {
@@ -381,7 +381,7 @@ func HandleSubscriptionLimitConfirmPrompt(c telebot.Context) error {
 	)
 
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"🧾 *ارتقای کاربر همزمان سرویس %s*\n\nتعداد کاربر جدید: %d دستگاه همزمان\nتعداد کاربر فعلی: %d دستگاه همزمان\nهزینه ارتقا (تا پایان دوره): %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت ارتقا را انتخاب کنید:",
+		"🧾 **ارتقای کاربر همزمان سرویس %s**\n\nتعداد کاربر جدید: %d دستگاه همزمان\nتعداد کاربر فعلی: %d دستگاه همزمان\nهزینه ارتقا (تا پایان دوره): **%.0f %s**\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت ارتقا را انتخاب کنید:",
 		sub.DisplayName, newLimit, sub.IPLimit, cost, currency, user.WalletBalance, currency,
 	), menu)
 }
@@ -477,18 +477,18 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 	})
 
 	var text strings.Builder
-	text.WriteString("💳 *پرداخت مستقیم برای ارتقای تعداد کاربران همزمان*\n\n")
-	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: *%.0f %s*\n\n", cost, currency))
+	text.WriteString("💳 **پرداخت مستقیم برای ارتقای تعداد کاربران همزمان**\n\n")
+	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%.0f %s**\n\n", cost, currency))
 	if card != "" {
 		text.WriteString(fmt.Sprintf("شماره کارت جهت واریز:\n`%s`\n", card))
 	}
 	if owner != "" {
-		text.WriteString(fmt.Sprintf("نام صاحب کارت: *%s*\n", owner))
+		text.WriteString(fmt.Sprintf("نام صاحب کارت: **%s**\n", owner))
 	}
 	if desc != "" {
 		text.WriteString(fmt.Sprintf("\n%s\n", desc))
 	}
-	text.WriteString("\n⚠️ لطفا پس از واریز، *رسید پرداخت (تصویر فیش)* را در همینجا ارسال کنید تا ارتقا پس از تایید ادمین اعمال شود.")
+	text.WriteString("\n⚠️ لطفا پس از واریز، **رسید پرداخت (تصویر فیش)** را در همینجا ارسال کنید تا ارتقا پس از تایید ادمین اعمال شود.")
 
 	return maybeEditOrSend(c, text.String())
 }
@@ -540,7 +540,7 @@ func HandleSubscriptionExtendMenu(c telebot.Context) error {
 			expiryLabel = fmt.Sprintf("شروع پس از اولین اتصال (مدت زمان %d ساعت)", hours)
 		}
 	}
-	return maybeEditOrSend(c, fmt.Sprintf("⏳ تمدید سرویس *%s*\nتاریخ انقضای فعلی: %s\n\nمدت زمان تمدید را انتخاب کنید:", sub.DisplayName, expiryLabel), menu)
+	return maybeEditOrSend(c, fmt.Sprintf("⏳ تمدید سرویس **%s**\nتاریخ انقضای فعلی: %s\n\nمدت زمان تمدید را انتخاب کنید:", sub.DisplayName, expiryLabel), menu)
 }
 
 func HandleExtendCustomMonthsPrompt(c telebot.Context) error {
@@ -617,7 +617,7 @@ func showExtendConfirmation(c telebot.Context, user *db.User, subID int, months 
 	)
 
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"🧾 *تمدید سرویس %s*\n\nمدت تمدید: %d ماه\nهزینه تمدید: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت هزینه تمدید را انتخاب کنید:",
+		"🧾 **تمدید سرویس %s**\n\nمدت تمدید: %d ماه\nهزینه تمدید: **%.0f %s**\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت هزینه تمدید را انتخاب کنید:",
 		sub.DisplayName, months, cost, currency, user.WalletBalance, currency,
 	), menu)
 }
@@ -743,18 +743,18 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 	})
 
 	var text strings.Builder
-	text.WriteString("💳 *پرداخت مستقیم برای تمدید سرویس*\n\n")
-	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: *%.0f %s*\n\n", cost, currency))
+	text.WriteString("💳 **پرداخت مستقیم برای تمدید سرویس**\n\n")
+	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%.0f %s**\n\n", cost, currency))
 	if card != "" {
 		text.WriteString(fmt.Sprintf("شماره کارت جهت واریز:\n`%s`\n", card))
 	}
 	if owner != "" {
-		text.WriteString(fmt.Sprintf("نام صاحب کارت: *%s*\n", owner))
+		text.WriteString(fmt.Sprintf("نام صاحب کارت: **%s**\n", owner))
 	}
 	if desc != "" {
 		text.WriteString(fmt.Sprintf("\n%s\n", desc))
 	}
-	text.WriteString("\n⚠️ لطفا پس از واریز، *رسید پرداخت (تصویر فیش)* را در همینجا ارسال کنید تا سرویس پس از تایید ادمین تمدید شود.")
+	text.WriteString("\n⚠️ لطفا پس از واریز، **رسید پرداخت (تصویر فیش)** را در همینجا ارسال کنید تا سرویس پس از تایید ادمین تمدید شود.")
 
 	return maybeEditOrSend(c, text.String())
 }
@@ -1021,10 +1021,10 @@ func ProcessClaimSubscriptionLink(c telebot.Context, text string) error {
 			))
 			menu.Inline(rows...)
 
-			caption := fmt.Sprintf("📥 *درخواست ثبت اشتراک دستی #%d*\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %d\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
+			caption := fmt.Sprintf("📥 **درخواست ثبت اشتراک دستی #%d**\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %d\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
 				req.ID, user.Username, user.TelegramID, req.ClientEmail, req.CustomName, req.IPLimit, req.DataGB)
 
-			_, _ = bot.Bot.Send(&telebot.User{ID: adminID}, caption, menu, telebot.ModeMarkdown)
+			_, _ = bot.Bot.Send(&telebot.User{ID: adminID}, FormatMarkdown(caption), menu, telebot.ModeMarkdown)
 		}
 	}
 

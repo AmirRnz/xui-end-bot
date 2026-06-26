@@ -49,7 +49,7 @@ func showAdminUsersPage(c telebot.Context, page int) error {
 	}
 
 	var text strings.Builder
-	text.WriteString(fmt.Sprintf("👥 Users (%d total, page %d/%d)\n\n", total, page+1, max(totalPages, 1)))
+	text.WriteString(fmt.Sprintf("👥 **Users** (%d total, page %d/%d)\n\n", total, page+1, max(totalPages, 1)))
 	for _, user := range users {
 		statusIcon := "⏳"
 		switch user.Status {
@@ -108,14 +108,14 @@ func showAdminViewUser(c telebot.Context, user *db.User) error {
 	subs, _ := db.GetSubscriptionsByUserID(context.Background(), user.ID)
 
 	var text strings.Builder
-	text.WriteString(fmt.Sprintf("👤 User #%d\n", user.ID))
-	text.WriteString(fmt.Sprintf("Telegram ID: %d\n", user.TelegramID))
-	text.WriteString(fmt.Sprintf("Username: @%s\n", user.Username))
-	text.WriteString(fmt.Sprintf("Name: %s %s\n", user.FirstName, user.LastName))
-	text.WriteString(fmt.Sprintf("Status: %s\n", user.Status))
-	text.WriteString(fmt.Sprintf("Service: %s\n", user.ServiceNameValue()))
-	text.WriteString(fmt.Sprintf("Balance: %d\n", user.WalletBalance))
-	text.WriteString(fmt.Sprintf("Subscriptions: %d\n", len(subs)))
+	text.WriteString(fmt.Sprintf("👤 **User #%d**\n\n", user.ID))
+	text.WriteString(fmt.Sprintf("🆔 **Telegram ID**: `%d`\n", user.TelegramID))
+	text.WriteString(fmt.Sprintf("🌐 **Username**: @%s\n", user.Username))
+	text.WriteString(fmt.Sprintf("📝 **Name**: %s %s\n", user.FirstName, user.LastName))
+	text.WriteString(fmt.Sprintf("⚡ **Status**: %s\n", user.Status))
+	text.WriteString(fmt.Sprintf("💼 **Service**: %s\n", user.ServiceNameValue()))
+	text.WriteString(fmt.Sprintf("👛 **Balance**: %d\n", user.WalletBalance))
+	text.WriteString(fmt.Sprintf("📦 **Subscriptions**: %d\n", len(subs)))
 
 	menu := &telebot.ReplyMarkup{}
 	rows := []telebot.Row{

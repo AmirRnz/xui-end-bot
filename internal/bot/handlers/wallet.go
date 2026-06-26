@@ -48,7 +48,7 @@ func HandleWalletFlow(c telebot.Context) error {
 	}
 	rows := append(row, menu.Row(menu.Data("« بازگشت", "menu_main")))
 	menu.Inline(rows...)
-	return maybeEditOrSend(c, fmt.Sprintf("👛 *موجودی کیف پول شما:* %d %s", user.WalletBalance, currency), menu)
+	return maybeEditOrSend(c, fmt.Sprintf("👛 **موجودی کیف پول شما:** %d %s", user.WalletBalance, currency), menu)
 }
 
 func HandleTopupInstructions(c telebot.Context) error {
@@ -68,7 +68,7 @@ func HandleTopupInstructions(c telebot.Context) error {
 		text += "\n\nشماره کارت جهت واریز:\n`" + card + "`"
 	}
 	if owner != "" {
-		text += "\nنام صاحب کارت: *" + owner + "*"
+		text += "\nنام صاحب کارت: **" + owner + "**"
 	}
 	if minAmount != "" && minAmount != "0" {
 		text += "\nحداقل مبلغ شارژ مجاز: " + minAmount
@@ -415,8 +415,8 @@ func HandleAdminRejectPurchase(c telebot.Context) error {
 		case "claim":
 			actionLabel = "ثبت اشتراک قدیمی"
 		}
-		msg := fmt.Sprintf("❌ درخواست پرداخت مستقیم شما برای *%s* به مبلغ %.0f توسط ادمین رد شد. لطفا رسید واریزی خود را بررسی کنید یا با پشتیبانی در ارتباط باشید.", actionLabel, req.Price)
-		_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, msg)
+		msg := fmt.Sprintf("❌ درخواست پرداخت مستقیم شما برای **%s** به مبلغ %.0f توسط ادمین رد شد. لطفا رسید واریزی خود را بررسی کنید یا با پشتیبانی در ارتباط باشید.", actionLabel, req.Price)
+		_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, FormatMarkdown(msg), telebot.ModeMarkdown)
 	}
 
 	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("❌ درخواست خرید #%d رد شد.", reqID)})
@@ -567,9 +567,9 @@ func extendSubscriptionFromApprovedRequest(user *db.User, sub *db.Subscription, 
 		currency = "IRR"
 	}
 
-	msg := fmt.Sprintf("✅ پرداخت شما تایید و اشتراک *%s* به مدت %d ماه تمدید شد.\nتاریخ انقضای جدید: %s\nمبلغ پرداخت شده: %.0f %s.",
+	msg := fmt.Sprintf("✅ پرداخت شما تایید و اشتراک **%s** به مدت %d ماه تمدید شد.\nتاریخ انقضای جدید: %s\nمبلغ پرداخت شده: %.0f %s.",
 		sub.DisplayName, req.Months, newExpiryLabel, req.Price, currency)
-	_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, msg)
+	_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, FormatMarkdown(msg), telebot.ModeMarkdown)
 	return nil
 }
 
@@ -591,9 +591,9 @@ func upgradeSubscriptionIPFromApprovedRequest(user *db.User, sub *db.Subscriptio
 		currency = "IRR"
 	}
 
-	msg := fmt.Sprintf("✅ پرداخت شما تایید و سقف کاربر همزمان اشتراک *%s* به %d دستگاه ارتقا یافت.\nهزینه ارتقا پرداخت شده: %.0f %s.",
+	msg := fmt.Sprintf("✅ پرداخت شما تایید و سقف کاربر همزمان اشتراک **%s** به %d دستگاه ارتقا یافت.\nهزینه ارتقا پرداخت شده: %.0f %s.",
 		sub.DisplayName, req.IPLimit, req.Price, currency)
-	_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, msg)
+	_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, FormatMarkdown(msg), telebot.ModeMarkdown)
 	return nil
 }
 
@@ -766,8 +766,8 @@ func createSubscriptionFromApprovedClaim(user *db.User, plan *db.PaidPlan, req *
 
 	// Send success notification to the user
 	targetUser := &telebot.User{ID: user.TelegramID}
-	successMsg := fmt.Sprintf("✅ درخواست ثبت اشتراک شما تایید شد.\n\nسرویس *%s* به لیست سرویس‌های شما اضافه شد و اکنون می‌توانید آن را مدیریت کنید.", sub.ClientEmail)
-	_, _ = bot.Bot.Send(targetUser, successMsg, telebot.ModeMarkdown)
+	successMsg := fmt.Sprintf("✅ درخواست ثبت اشتراک شما تایید شد.\n\nسرویس **%s** به لیست سرویس‌های شما اضافه شد و اکنون می‌توانید آن را مدیریت کنید.", sub.ClientEmail)
+	_, _ = bot.Bot.Send(targetUser, FormatMarkdown(successMsg), telebot.ModeMarkdown)
 
 	// Send subscription connection details to user (QR and link)
 	links, err := bot.XUIClient.GetSubscriptionLinks(sub.SubID)
@@ -783,7 +783,7 @@ func createSubscriptionFromApprovedClaim(user *db.User, plan *db.PaidPlan, req *
 	if subLink == "" {
 		subLink = bot.XUIClient.SubscriptionURLFor(sub.SubID)
 	}
-	detailsMsg := fmt.Sprintf("🔗 اشتراک: *%s*\n📅 تاریخ انقضا: %s", sub.DisplayName, sub.EndDate.Format("2006-01-02 15:04 UTC"))
+	detailsMsg := fmt.Sprintf("🔗 اشتراک: **%s**\n📅 تاریخ انقضا: %s", sub.DisplayName, sub.EndDate.Format("2006-01-02 15:04 UTC"))
 	_ = sendSubscriptionResultTo(user.TelegramID, subLink, detailsMsg)
 
 	return nil
@@ -833,10 +833,10 @@ func HandleAdminPendingClaims(c telebot.Context) error {
 		))
 		menu.Inline(rows...)
 
-		caption := fmt.Sprintf("📥 *درخواست ثبت اشتراک دستی #%d*\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %d\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
+		caption := fmt.Sprintf("📥 **درخواست ثبت اشتراک دستی #%d**\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %d\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
 			req.ID, username, req.UserID, req.ClientEmail, req.CustomName, req.IPLimit, req.DataGB)
 
-		_, _ = bot.Bot.Send(c.Sender(), caption, menu, telebot.ModeMarkdown)
+		_, _ = bot.Bot.Send(c.Sender(), FormatMarkdown(caption), menu, telebot.ModeMarkdown)
 	}
 	return nil
 }

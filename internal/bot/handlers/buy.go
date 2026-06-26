@@ -48,15 +48,15 @@ func HandleBuySubFlow(c telebot.Context) error {
 		currency = "IRR"
 	}
 	var text strings.Builder
-	text.WriteString("💼 طرح‌های خرید سرویس:\n\n")
+	text.WriteString("💼 **طرح‌های خرید سرویس**:\n\n")
 	menu := &telebot.ReplyMarkup{}
 	rows := make([]telebot.Row, 0, len(plans)+1)
 	for _, plan := range plans {
 		if plan.IsLimited {
-			text.WriteString(fmt.Sprintf("📦 *%s* (محدود)\nقیمت هر گیگابایت: %.0f %s\nحداقل ترافیک: %d گیگابایت\nماهانه اضافه: +%.0f %s\nدستگاه همزمان: %d تا سقف %d\nهزینه کاربر اضافه: +%.0f %s/کاربر/ماه\n",
+			text.WriteString(fmt.Sprintf("📦 **%s** (محدود)\nقیمت هر گیگابایت: %.0f %s\nحداقل ترافیک: %d گیگابایت\nماهانه اضافه: +%.0f %s\nدستگاه همزمان: %d تا سقف %d\nهزینه کاربر اضافه: +%.0f %s/کاربر/ماه\n",
 				plan.Name, plan.PricePerGB, currency, plan.MinDataGB, plan.PricePerExtraMonth, currency, plan.BaseIPLimit, plan.MaxIPLimit, plan.PricePerExtraIP, currency))
 		} else {
-			text.WriteString(fmt.Sprintf("📦 *%s* (نامحدود)\nقیمت پایه: %.0f %s/ماهانه\nدستگاه همزمان: %d تا سقف %d\nهزینه کاربر اضافه: +%.0f %s/کاربر/ماه\n",
+			text.WriteString(fmt.Sprintf("📦 **%s** (نامحدود)\nقیمت پایه: %.0f %s/ماهانه\nدستگاه همزمان: %d تا سقف %d\nهزینه کاربر اضافه: +%.0f %s/کاربر/ماه\n",
 				plan.Name, plan.BasePrice, currency, plan.BaseIPLimit, plan.MaxIPLimit, plan.PricePerExtraIP, currency))
 		}
 		if plan.Description != "" {
@@ -114,7 +114,7 @@ func HandleSelectBuyPlan(c telebot.Context) error {
 		descText = fmt.Sprintf("\n\n%s", plan.Description)
 	}
 
-	text := fmt.Sprintf("📦 *%s*\n%s%s%s\n\nمدت زمان سرویس را انتخاب کنید:", plan.Name, priceLabel, discountText, descText)
+	text := fmt.Sprintf("📦 **%s**\n%s%s%s\n\nمدت زمان سرویس را انتخاب کنید:", plan.Name, priceLabel, discountText, descText)
 	return maybeEditOrSend(c, text, menu)
 }
 
@@ -201,7 +201,7 @@ func promptDataLimit(c telebot.Context, plan *db.PaidPlan, months int) error {
 			menu.Data("« بازگشت", "select_buy_plan", fmt.Sprintf("%d", plan.ID)),
 		),
 	)
-	text := fmt.Sprintf("📦 *%s* — %d ماهه\nلطفا ترافیک مورد نظر خود را انتخاب کنید یا مقدار دلخواه را بنویسید (حداقل: %d گیگابایت):", plan.Name, months, minGB)
+	text := fmt.Sprintf("📦 **%s** — %d ماهه\nلطفا ترافیک مورد نظر خود را انتخاب کنید یا مقدار دلخواه را بنویسید (حداقل: %d گیگابایت):", plan.Name, months, minGB)
 	return maybeEditOrSend(c, text, menu)
 }
 
@@ -290,7 +290,7 @@ func showIPChoicesLimited(c telebot.Context, plan *db.PaidPlan, months int, gb i
 	}
 	rows = append(rows, menu.Row(menu.Data("« بازگشت", "buy_months", fmt.Sprintf("%d:%d", months, plan.ID))))
 	menu.Inline(rows...)
-	return maybeEditOrSend(c, fmt.Sprintf("📦 *%s* — %d گیگابایت، %d ماهه\nتعداد کاربر همزمان (محدودیت دستگاه) را انتخاب کنید:", plan.Name, gb, months), menu)
+	return maybeEditOrSend(c, fmt.Sprintf("📦 **%s** — %d گیگابایت، %d ماهه\nتعداد کاربر همزمان (محدودیت دستگاه) را انتخاب کنید:", plan.Name, gb, months), menu)
 }
 
 func HandleBuyIPRunLimited(c telebot.Context) error {
@@ -331,7 +331,7 @@ func HandleBuyIPRunLimited(c telebot.Context) error {
 		menu.Row(menu.Data("🎲 انتخاب توسط ربات", "buy_auto_name")),
 	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"📦 *%s*\n%d گیگابایت، %d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
+		"📦 **%s**\n%d گیگابایت، %d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
 		plan.Name, gb, months, ipLimit, price, currency), menu)
 }
 
@@ -363,7 +363,7 @@ func showIPChoices(c telebot.Context, planID int64, months int) error {
 	}
 	rows = append(rows, menu.Row(menu.Data("« بازگشت", "select_buy_plan", fmt.Sprintf("%d", planID))))
 	menu.Inline(rows...)
-	return maybeEditOrSend(c, fmt.Sprintf("📦 *%s* — %d ماهه\nتعداد کاربر همزمان (محدودیت دستگاه) را انتخاب کنید:", plan.Name, months), menu)
+	return maybeEditOrSend(c, fmt.Sprintf("📦 **%s** — %d ماهه\nتعداد کاربر همزمان (محدودیت دستگاه) را انتخاب کنید:", plan.Name, months), menu)
 }
 
 func HandleBuyIPRun(c telebot.Context) error {
@@ -418,7 +418,7 @@ func HandleBuyIPRun(c telebot.Context) error {
 		menu.Row(menu.Data("🎲 انتخاب توسط ربات", "buy_auto_name")),
 	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"📦 *%s*\n%d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
+		"📦 **%s**\n%d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
 		plan.Name, months, ipLimit, price, currency), menu)
 }
 
@@ -493,8 +493,8 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 			menu.Data("❌ انصراف", "buy_cancel"),
 		),
 	)
-	return c.Send(fmt.Sprintf(
-		"🧾 *خلاصه فاکتور خرید*\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %d\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
+	return maybeEditOrSend(c, fmt.Sprintf(
+		"🧾 **خلاصه فاکتور خرید**\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %d\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
 		plan.Name, email, months, ipLimit, dataLabel, price, currency,
 		user.WalletBalance, currency,
 	), menu)
@@ -579,7 +579,7 @@ func HandleBuyAutoName(c telebot.Context) error {
 		),
 	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"🧾 *خلاصه فاکتور خرید*\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %d\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
+		"🧾 **خلاصه فاکتور خرید**\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %d\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
 		plan.Name, email, months, ipLimit, dataLabel, price, currency,
 		user.WalletBalance, currency,
 	), menu)
@@ -659,18 +659,18 @@ func HandleBuyDirectPayment(c telebot.Context) error {
 	bot.FSM.SetState(user.TelegramID, "awaiting_purchase_receipt", state.Data)
 
 	var text strings.Builder
-	text.WriteString("💳 *راهنمای پرداخت مستقیم (کارت به کارت)*\n\n")
-	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: *%.0f %s*\n\n", price, currency))
+	text.WriteString("💳 **راهنمای پرداخت مستقیم (کارت به کارت)**\n\n")
+	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%.0f %s**\n\n", price, currency))
 	if card != "" {
 		text.WriteString(fmt.Sprintf("شماره کارت جهت واریز:\n`%s`\n", card))
 	}
 	if owner != "" {
-		text.WriteString(fmt.Sprintf("نام صاحب کارت: *%s*\n", owner))
+		text.WriteString(fmt.Sprintf("نام صاحب کارت: **%s**\n", owner))
 	}
 	if desc != "" {
 		text.WriteString(fmt.Sprintf("\n%s\n", desc))
 	}
-	text.WriteString("\n⚠️ لطفا پس از واریز وجه، *تصویر رسید (عکس فیش واریزی)* را در همینجا ارسال کنید تا سرویس شما پس از تایید ادمین به صورت خودکار فعال شود.")
+	text.WriteString("\n⚠️ لطفا پس از واریز وجه، **تصویر رسید (عکس فیش واریزی)** را در همینجا ارسال کنید تا سرویس شما پس از تایید ادمین به صورت خودکار فعال شود.")
 
 	return maybeEditOrSend(c, text.String())
 }
