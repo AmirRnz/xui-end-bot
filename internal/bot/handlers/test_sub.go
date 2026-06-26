@@ -48,13 +48,29 @@ func HandleTestSubFlow(c telebot.Context) error {
 
 	menu := &telebot.ReplyMarkup{}
 	rows := make([]telebot.Row, 0, len(plans)+1)
+	resetDays := getTestResetDays()
 	for _, plan := range plans {
-		used, _ := db.GetTodayTestUsage(context.Background(), user.ID, plan.ID)
-		limit := testLimitForUser(user, plan)
-		remaining := limit - used
-		if remaining < 0 {
-			remaining = 0
+		updatedAt, exists, _ := db.GetTestUsage(context.Background(), user.ID, plan.ID)
+		
+		canClaim := true
+		var nextAvailable time.Time
+		if exists && resetDays > 0 {
+			nextAvailable = updatedAt.Add(time.Duration(resetDays) * 24 * time.Hour)
+			if time.Now().Before(nextAvailable) {
+				canClaim = false
+			}
 		}
+
+		var statusText string
+		var btnLabel string
+		if canClaim {
+			statusText = "مجاز به دریافت"
+			btnLabel = plan.Name
+		} else {
+			statusText = fmt.Sprintf("قبلاً دریافت شده (دریافت مجدد از: %s)", nextAvailable.Format("2006-01-02 15:04 UTC"))
+			btnLabel = fmt.Sprintf("%s (غیرمجاز)", plan.Name)
+		}
+
 		var dataLimitStr string
 		if plan.MaxDataBytes == 0 {
 			dataLimitStr = "نامحدود"
@@ -62,13 +78,12 @@ func HandleTestSubFlow(c telebot.Context) error {
 			dataLimitStr = fmt.Sprintf("%.2f گیگابایت", float64(plan.MaxDataBytes)/1073741824)
 		}
 		durationStr := humanDuration(plan.ExpireSeconds)
-		text.WriteString(fmt.Sprintf("📦 *%s*\n⏱️ مدت اعتبار: %s (پس از اولین اتصال)\n📊 حجم مجاز: %s\n🔄 مصرف امروز شما: %d از %d (ساعت بازنشانی %s UTC)\n",
-			plan.Name, durationStr, dataLimitStr, used, limit, nextUTCReset()))
+		text.WriteString(fmt.Sprintf("📦 *%s*\n⏱️ مدت اعتبار: %s (پس از اولین اتصال)\n📊 حجم مجاز: %s\n🔄 وضعیت: %s\n",
+			plan.Name, durationStr, dataLimitStr, statusText))
 		if plan.Description != "" {
 			text.WriteString(fmt.Sprintf("%s\n", plan.Description))
 		}
 		text.WriteString("\n")
-		btnLabel := fmt.Sprintf("%s (%d از %d باقی‌مانده)", plan.Name, remaining, limit)
 		rows = append(rows, menu.Row(menu.Data(btnLabel, "select_test_plan", fmt.Sprintf("%d", plan.ID))))
 	}
 	rows = append(rows, menu.Row(menu.Data("« بازگشت", "menu_main")))
@@ -89,6 +104,18 @@ func HandleSelectTestPlan(c telebot.Context) error {
 	user := userFromContext(c)
 	if user == nil {
 		return c.Send("کاربر یافت نشد.")
+	}
+
+	updatedAt, exists, _ := db.GetTestUsage(context.Background(), user.ID, plan.ID)
+	resetDays := getTestResetDays()
+	if exists && resetDays > 0 {
+		nextAvailable := updatedAt.Add(time.Duration(resetDays) * 24 * time.Hour)
+		if time.Now().Before(nextAvailable) {
+			return c.Respond(&telebot.CallbackResponse{
+				Text:      fmt.Sprintf("شما قبلاً این طرح تست را دریافت کرده‌اید. امکان دریافت مجدد در تاریخ %s وجود دارد.", nextAvailable.Format("2006-01-02 15:04 UTC")),
+				ShowAlert: true,
+			})
+		}
 	}
 
 	email := fmt.Sprintf("test_%s_%s", randomName(), randomToken(4))
@@ -143,10 +170,13 @@ func generateTestSubscription(c telebot.Context, user *db.User, planID int64, em
 	if err != nil || plan == nil || !plan.Enabled {
 		return c.Send("طرح تست یافت نشد.")
 	}
-	used, _ := db.GetTodayTestUsage(context.Background(), user.ID, plan.ID)
-	limit := testLimitForUser(user, plan)
-	if used >= limit {
-		return c.Send(fmt.Sprintf("محدودیت تست‌های رایگان شما به پایان رسیده است. شما مجاز به دریافت حداکثر %d تست هستید.", limit))
+	updatedAt, exists, _ := db.GetTestUsage(context.Background(), user.ID, plan.ID)
+	resetDays := getTestResetDays()
+	if exists && resetDays > 0 {
+		nextAvailable := updatedAt.Add(time.Duration(resetDays) * 24 * time.Hour)
+		if time.Now().Before(nextAvailable) {
+			return c.Send(fmt.Sprintf("محدودیت تست‌های رایگان شما به پایان رسیده است. امکان دریافت مجدد در تاریخ %s وجود دارد.", nextAvailable.Format("2006-01-02 15:04 UTC")))
+		}
 	}
 	if err := createAndSendTest(c, user, plan, email); err != nil {
 		return err
@@ -246,20 +276,13 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	return nil
 }
 
-func testLimitForUser(user *db.User, plan *db.TestPlan) int {
-	limitKey := "test_limit"
-	if user != nil && !user.IsApproved() {
-		limitKey = "unapproved_test_limit"
+func getTestResetDays() int {
+	resetDaysStr, _ := db.GetSetting(context.Background(), "test_reset_days")
+	resetDays, err := strconv.Atoi(strings.TrimSpace(resetDaysStr))
+	if err != nil || resetDays < 0 {
+		return 30 // default to 30 days
 	}
-	limitStr, _ := db.GetSetting(context.Background(), limitKey)
-	limit, err := strconv.Atoi(strings.TrimSpace(limitStr))
-	if err != nil {
-		return 1
-	}
-	if limit < 0 {
-		return 0
-	}
-	return limit
+	return resetDays
 }
 
 func nextUTCReset() string {

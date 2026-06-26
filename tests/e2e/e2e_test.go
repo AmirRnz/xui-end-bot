@@ -398,9 +398,9 @@ func cleanDB(ctx context.Context, t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to seed currency setting: %v", err)
 	}
-	err = db.SetSetting(ctx, "unapproved_test_limit", "1")
+	err = db.SetSetting(ctx, "test_reset_days", "30")
 	if err != nil {
-		t.Fatalf("Failed to seed limit setting: %v", err)
+		t.Fatalf("Failed to seed reset days setting: %v", err)
 	}
 }
 
@@ -1454,41 +1454,37 @@ func TestE2ESuite(t *testing.T) {
 			}
 		})
 
-		// 53. Combination: Admin changes unapproved test limit -> user tests boundary
-		t.Run("ComboAdminChangesUnapprovedLimit", func(t *testing.T) {
+		// 53. Combination: Admin changes test reset days -> user tests boundary
+		t.Run("ComboAdminChangesTestResetDays", func(t *testing.T) {
 			resetState()
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'pending')`, userTGID, userUsername)
 
 			// Admin opens settings
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_settings")
 			_ = env.ExpectResponse(t, 2*time.Second) // settings menu
-			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_set_unapproved_limit")
-			_ = env.ExpectResponse(t, 2*time.Second) // prompt limit
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_set_test_reset_days")
+			_ = env.ExpectResponse(t, 2*time.Second) // prompt reset days
 
-			// Enter 2
-			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_unapproved_test_limit", nil)
-			env.SendMessage(adminTGID, adminUsername, "2")
+			// Enter 30
+			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_test_reset_days", nil)
+			env.SendMessage(adminTGID, adminUsername, "30")
 			_ = env.ExpectResponse(t, 2*time.Second) // confirmation
 
 			// Verify setting in DB
-			limit, _ := db.GetSetting(env.ctx, "unapproved_test_limit")
-			if limit != "2" {
-				t.Fatalf("Expected limit to be 2 in DB, got %s", limit)
+			limit, _ := db.GetSetting(env.ctx, "test_reset_days")
+			if limit != "30" {
+				t.Fatalf("Expected test_reset_days to be 30 in DB, got %s", limit)
 			}
 
 			// Generate 1st test sub
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 
-			// Generate 2nd test sub
+			// Generate 2nd test sub (should be blocked)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
-
-			// Generate 3rd test sub (should be blocked)
-			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			resp3 := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp3, "text"), "maximum of 2") {
-				t.Fatalf("Expected limit of 2 blocked message, got: %+v", resp3)
+			resp2 := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(resp2, "text"), "قبلاً") && !strings.Contains(getStr(resp2, "text"), "محدودیت") {
+				t.Fatalf("Expected limit blocked message, got: %+v", resp2)
 			}
 		})
 
@@ -1826,21 +1822,21 @@ func TestE2ESuite(t *testing.T) {
 			}
 		})
 
-		// 61. Scenario: Admin configures approved test limit, support username, and resets tests
+		// 61. Scenario: Admin configures test_reset_days, support username, and resets tests
 		t.Run("AdminConfigureLimitsSupportAndReset", func(t *testing.T) {
 			setupApprovedUser()
 
-			// 1. Admin configures test_limit to 2
-			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_set_test_limit")
+			// 1. Admin configures test_reset_days to 30
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_set_test_reset_days")
 			_ = env.ExpectResponse(t, 2*time.Second) // prompt
-			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_test_limit", nil)
-			env.SendMessage(adminTGID, adminUsername, "2")
+			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_test_reset_days", nil)
+			env.SendMessage(adminTGID, adminUsername, "30")
 			_ = env.ExpectResponse(t, 2*time.Second) // saved confirmation
 
-			// Verify test_limit setting in DB
-			limit, _ := db.GetSetting(env.ctx, "test_limit")
-			if limit != "2" {
-				t.Fatalf("Expected test_limit to be 2 in DB, got %s", limit)
+			// Verify test_reset_days setting in DB
+			limit, _ := db.GetSetting(env.ctx, "test_reset_days")
+			if limit != "30" {
+				t.Fatalf("Expected test_reset_days to be 30 in DB, got %s", limit)
 			}
 
 			// 2. Admin configures support_username to 'my_support_guy'
@@ -1863,18 +1859,15 @@ func TestE2ESuite(t *testing.T) {
 				t.Fatalf("Expected support username @my_support_guy in message, got: %+v", respSupport)
 			}
 
-			// 4. Generate 2 test subscriptions (since limit is 2)
+			// 4. Generate 1 test subscription (since limit is 1)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // 1st success QR
 
-			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second) // 2nd success QR
-
-			// Try to generate 3rd test sub (should fail due to limit 2)
+			// Try to generate 2nd test sub (should fail due to limit 1)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			respFail := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respFail, "text"), "محدودیت") && !strings.Contains(getStr(respFail, "text"), "limit") {
-				t.Fatalf("Expected limit error for 3rd test sub, got: %+v", respFail)
+			if !strings.Contains(getStr(respFail, "text"), "قبلاً") && !strings.Contains(getStr(respFail, "text"), "محدودیت") {
+				t.Fatalf("Expected limit error for 2nd test sub, got: %+v", respFail)
 			}
 
 			// 5. Admin resets tests
@@ -1897,4 +1890,3 @@ func TestE2ESuite(t *testing.T) {
 		})
 	})
 }
-

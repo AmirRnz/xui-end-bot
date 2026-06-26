@@ -154,15 +154,22 @@ func CountTestSubscriptionsForUser(ctx context.Context, userID int64) (int, erro
 	return count, err
 }
 
-func GetTodayTestUsage(ctx context.Context, userID int64, planID int64) (int, error) {
+func GetTestUsage(ctx context.Context, userID int64, planID int64) (time.Time, bool, error) {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
-	var count int
+	var updatedAt time.Time
 	err := Pool.QueryRow(ctx, `
-		SELECT COALESCE((SELECT used_count FROM test_usage WHERE user_id = $1 AND plan_id = $2 AND reset_date = '2000-01-01'::DATE), 0)
-	`, userID, planID).Scan(&count)
-	return count, err
+		SELECT updated_at FROM test_usage
+		WHERE user_id = $1 AND plan_id = $2 AND reset_date = '2000-01-01'::DATE
+	`, userID, planID).Scan(&updatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return time.Time{}, false, nil
+		}
+		return time.Time{}, false, err
+	}
+	return updatedAt, true, nil
 }
 
 func IncrementTestUsage(ctx context.Context, userID int64, planID int64, increment int) error {

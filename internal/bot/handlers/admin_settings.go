@@ -31,11 +31,8 @@ func RegisterAdminSettings(b *telebot.Bot, auth telebot.MiddlewareFunc, admin te
 	b.Handle("\fadmin_set_expiry_notify_days", func(c telebot.Context) error {
 		return settingPrompt(c, "awaiting_setting_expiry_notify_days", "Send expiry notification days as comma-separated values, e.g. 3,1.")
 	}, auth, admin)
-	b.Handle("\fadmin_set_unapproved_limit", func(c telebot.Context) error {
-		return settingPrompt(c, "awaiting_setting_unapproved_test_limit", "Send unapproved users daily test limit per plan. Use 0 to block.")
-	}, auth, admin)
-	b.Handle("\fadmin_set_test_limit", func(c telebot.Context) error {
-		return settingPrompt(c, "awaiting_setting_test_limit", "Send approved users test limit. Use 0 to block.")
+	b.Handle("\fadmin_set_test_reset_days", func(c telebot.Context) error {
+		return settingPrompt(c, "awaiting_setting_test_reset_days", "Send test reset period in days (e.g. 30). Use 0 to disable reset limit.")
 	}, auth, admin)
 	b.Handle("\fadmin_set_support_username", func(c telebot.Context) error {
 		return settingPrompt(c, "awaiting_setting_support_username", "Send support Telegram username (with or without @).")
@@ -47,25 +44,24 @@ func RegisterAdminSettings(b *telebot.Bot, auth telebot.MiddlewareFunc, admin te
 }
 
 func HandleAdminSettings(c telebot.Context) error {
-	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "unapproved_test_limit", "test_limit", "support_username", "expiry_notify_days", "group_name"}
+	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "test_reset_days", "support_username", "expiry_notify_days", "group_name"}
 	values := map[string]string{}
 	for _, key := range keys {
 		values[key], _ = db.GetSetting(context.Background(), key)
 	}
-	if values["test_limit"] == "" {
-		values["test_limit"] = "1"
+	if values["test_reset_days"] == "" {
+		values["test_reset_days"] = "30"
 	}
 
-	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nUnapproved test limit: %s\nApproved test limit: %s\nSupport username: %s\nExpiry notify days: %s\nGroup Name: %s",
-		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["unapproved_test_limit"], values["test_limit"], values["support_username"], values["expiry_notify_days"], values["group_name"])
+	text := fmt.Sprintf("Settings\nCard: %s\nOwner: %s\nCurrency: %s\nMinimum top-up: %s\nTest reset days: %s\nSupport username: %s\nExpiry notify days: %s\nGroup Name: %s",
+		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["test_reset_days"], values["support_username"], values["expiry_notify_days"], values["group_name"])
 
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
 		menu.Row(menu.Data("💳 Card", "admin_set_card"), menu.Data("👤 Owner", "admin_set_card_owner")),
 		menu.Row(menu.Data("💱 Currency", "admin_set_currency"), menu.Data("💰 Min top-up", "admin_set_min_topup")),
-		menu.Row(menu.Data("📝 Top-up text", "admin_set_topup_desc"), menu.Data("🔒 Unapproved limit", "admin_set_unapproved_limit")),
-		menu.Row(menu.Data("🔓 Approved limit", "admin_set_test_limit"), menu.Data("🆘 Support User", "admin_set_support_username")),
-		menu.Row(menu.Data("🔔 Expiry days", "admin_set_expiry_notify_days")),
+		menu.Row(menu.Data("📝 Top-up text", "admin_set_topup_desc"), menu.Data("⏱️ Test reset days", "admin_set_test_reset_days")),
+		menu.Row(menu.Data("🆘 Support User", "admin_set_support_username"), menu.Data("🔔 Expiry days", "admin_set_expiry_notify_days")),
 		menu.Row(menu.Data("👥 Group Name", "admin_set_group_name")),
 		menu.Row(menu.Data("🔄 Reset All User Tests", "admin_reset_tests")),
 		menu.Row(menu.Data("« Back", "admin_menu")),
@@ -93,10 +89,10 @@ func ProcessSettingText(c telebot.Context, key string, value string) error {
 		if _, err := strconv.ParseFloat(value, 64); err != nil {
 			return c.Send("Minimum top-up must be a number.")
 		}
-	case "unapproved_test_limit", "test_limit":
+	case "test_reset_days":
 		v, err := strconv.Atoi(value)
 		if err != nil || v < 0 {
-			return c.Send("Test limit must be zero or a positive integer.")
+			return c.Send("Test reset days must be zero or a positive integer.")
 		}
 	case "expiry_notify_days":
 		for _, part := range strings.Split(value, ",") {
