@@ -46,8 +46,14 @@ func ApprovePurchaseRequest(ctx context.Context, id int64, adminID int64) (*Purc
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
 	r := &PurchaseRequest{}
-	err := Pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		UPDATE purchase_requests
 		SET status = 'approved', admin_id = $1, updated_at = NOW()
 		WHERE id = $2 AND status = 'pending'
@@ -61,7 +67,7 @@ func ApprovePurchaseRequest(ctx context.Context, id int64, adminID int64) (*Purc
 	}
 
 	// Add to transactions table
-	_, err = Pool.Exec(ctx, `
+	_, err = tx.Exec(ctx, `
 		INSERT INTO transactions (user_id, amount, type, status, description, reference_type, reference_id)
 		VALUES ($1, $2, 'debit', 'completed', $3, 'purchase_request', $4)
 	`, r.UserID, int64(r.Price), "direct purchase approved: "+r.Type+" - "+r.ClientEmail, r.ID)
@@ -69,6 +75,9 @@ func ApprovePurchaseRequest(ctx context.Context, id int64, adminID int64) (*Purc
 		return nil, err
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
 	return r, nil
 }
 
@@ -116,4 +125,41 @@ func GetPendingPurchaseRequests(ctx context.Context) ([]*PurchaseRequest, error)
 		reqs = append(reqs, r)
 	}
 	return reqs, rows.Err()
+}
+
+func RollbackPurchaseRequest(ctx context.Context, id int64) error {
+	ctx, cancel := dbCtx(ctx)
+	defer cancel()
+
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `UPDATE purchase_requests SET status = 'pending', admin_id = NULL WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, `DELETE FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func HasPendingClaimRequest(ctx context.Context, subID string) (bool, error) {
+	ctx, cancel := dbCtx(ctx)
+	defer cancel()
+
+	var exists bool
+	err := Pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM purchase_requests 
+			WHERE type = 'claim' AND custom_name = $1 AND status = 'pending'
+		)
+	`, subID).Scan(&exists)
+	return exists, err
 }

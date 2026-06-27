@@ -84,6 +84,10 @@ func HandleReceiptPhoto(c telebot.Context) error {
 	if user == nil {
 		return c.Send("کاربر یافت نشد.")
 	}
+
+	unlock := bot.Locker.Lock(fmt.Sprintf("user_receipt:%d", user.ID))
+	defer unlock()
+
 	state := bot.FSM.GetState(user.TelegramID)
 	if state == nil {
 		return c.Send("هیچ فرآیند فعالی برای ارسال رسید وجود ندارد. لطفا ابتدا درخواست پرداخت خود را ثبت کنید.")
@@ -377,8 +381,8 @@ func HandleAdminApprovePurchase(c telebot.Context) error {
 
 	if activationErr != nil {
 		log.Printf("[CRITICAL] Activation failed for purchase request #%d: %v", reqID, activationErr)
-		_, _ = db.Pool.Exec(context.Background(), "UPDATE purchase_requests SET status = 'pending', admin_id = NULL WHERE id = $1", reqID)
-		return c.Send("خطا در فعال سازی در پنل: " + activationErr.Error() + ". وضعیت درخواست مجددا به حالت در انتظار برگشت داده شد.")
+		_ = db.RollbackPurchaseRequest(context.Background(), reqID)
+		return c.Send("خطا در تایید درخواست خرید: " + activationErr.Error() + ". وضعیت درخواست به حالت در انتظار برگشت داده شد.")
 	}
 
 	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("✅ درخواست خرید #%d تایید و فعال شد.", reqID)})
@@ -683,7 +687,7 @@ func HandleAdminClaimAssign(c telebot.Context) error {
 	if err != nil {
 		log.Printf("[CRITICAL] Claim activation failed for request #%d: %v", req.ID, err)
 		// rollback
-		_, _ = db.Pool.Exec(context.Background(), "UPDATE purchase_requests SET status = 'pending', admin_id = NULL WHERE id = $1", req.ID)
+		_ = db.RollbackPurchaseRequest(context.Background(), req.ID)
 		return c.Send("خطا در فعال سازی اشتراک: " + err.Error() + ". وضعیت درخواست به حالت در انتظار برگشت داده شد.")
 	}
 

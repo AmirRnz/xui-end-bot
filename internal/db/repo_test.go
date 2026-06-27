@@ -405,3 +405,120 @@ func TestPlanSyncSubs(t *testing.T) {
 	}
 }
 
+func TestPurchaseRollbackAndClaim(t *testing.T) {
+	ctx := setupTestDB(t)
+
+	// Clean up after test
+	defer func() {
+		if Pool != nil {
+			_, _ = Pool.Exec(ctx, "DELETE FROM purchase_requests WHERE client_email LIKE 'test_claim_%'")
+			_, _ = Pool.Exec(ctx, "DELETE FROM transactions WHERE reference_type = 'purchase_request'")
+			_, _ = Pool.Exec(ctx, "DELETE FROM bot_users WHERE telegram_id = 999999998")
+		}
+	}()
+
+	// Create user
+	var userID int64
+	err := Pool.QueryRow(ctx, `
+		INSERT INTO bot_users (telegram_id, username, first_name, last_name)
+		VALUES (999999998, 'test_user_claim', 'Test', 'User')
+		ON CONFLICT (telegram_id) DO UPDATE SET username = EXCLUDED.username
+		RETURNING id
+	`).Scan(&userID)
+	if err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+
+	// Create purchase request (for claim)
+	req := &PurchaseRequest{
+		UserID:         userID,
+		Type:           "claim",
+		Price:          100.0,
+		Months:         1,
+		IPLimit:        1,
+		DataGB:         10,
+		CustomName:     "sub_claim_123",
+		ClientEmail:    "test_claim_email@example.com",
+		TelegramFileID: "claim",
+		Status:         "pending",
+	}
+
+	err = CreatePurchaseRequest(ctx, req)
+	if err != nil {
+		t.Fatalf("failed to create purchase request: %v", err)
+	}
+
+	// 1. Verify HasPendingClaimRequest
+	hasPending, err := HasPendingClaimRequest(ctx, "sub_claim_123")
+	if err != nil {
+		t.Fatalf("failed to check pending claim: %v", err)
+	}
+	if !hasPending {
+		t.Fatalf("expected HasPendingClaimRequest to be true, got false")
+	}
+
+	// 2. Approve the purchase request
+	approvedReq, err := ApprovePurchaseRequest(ctx, req.ID, 999999998)
+	if err != nil {
+		t.Fatalf("failed to approve purchase request: %v", err)
+	}
+	if approvedReq == nil {
+		t.Fatalf("approved request is nil")
+	}
+	if approvedReq.Status != "approved" {
+		t.Fatalf("expected status 'approved', got %q", approvedReq.Status)
+	}
+
+	// Verify transaction was created
+	var txCount int
+	err = Pool.QueryRow(ctx, "SELECT count(*) FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", req.ID).Scan(&txCount)
+	if err != nil {
+		t.Fatalf("failed to count transactions: %v", err)
+	}
+	if txCount != 1 {
+		t.Fatalf("expected 1 transaction, got %d", txCount)
+	}
+
+	// Verify HasPendingClaimRequest is now false since status is no longer 'pending'
+	hasPending, err = HasPendingClaimRequest(ctx, "sub_claim_123")
+	if err != nil {
+		t.Fatalf("failed to check pending claim: %v", err)
+	}
+	if hasPending {
+		t.Fatalf("expected HasPendingClaimRequest to be false after approval, got true")
+	}
+
+	// 3. Rollback the purchase request
+	err = RollbackPurchaseRequest(ctx, req.ID)
+	if err != nil {
+		t.Fatalf("failed to rollback purchase request: %v", err)
+	}
+
+	// Verify request is pending again
+	rolledReq, err := GetPurchaseRequestByID(ctx, req.ID)
+	if err != nil {
+		t.Fatalf("failed to get purchase request: %v", err)
+	}
+	if rolledReq.Status != "pending" || rolledReq.AdminID != nil {
+		t.Fatalf("expected status 'pending' and nil AdminID, got status %q, AdminID %v", rolledReq.Status, rolledReq.AdminID)
+	}
+
+	// Verify transaction was deleted
+	err = Pool.QueryRow(ctx, "SELECT count(*) FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", req.ID).Scan(&txCount)
+	if err != nil {
+		t.Fatalf("failed to count transactions after rollback: %v", err)
+	}
+	if txCount != 0 {
+		t.Fatalf("expected 0 transactions after rollback, got %d", txCount)
+	}
+
+	// Verify HasPendingClaimRequest is true again
+	hasPending, err = HasPendingClaimRequest(ctx, "sub_claim_123")
+	if err != nil {
+		t.Fatalf("failed to check pending claim: %v", err)
+	}
+	if !hasPending {
+		t.Fatalf("expected HasPendingClaimRequest to be true after rollback, got false")
+	}
+}
+

@@ -956,6 +956,9 @@ func ProcessClaimSubscriptionLink(c telebot.Context, text string) error {
 	}
 	subID := parts[len(parts)-1]
 
+	unlock := bot.Locker.Lock(fmt.Sprintf("claim_sub:%s", subID))
+	defer unlock()
+
 	// 1. Check if subID already exists in local DB
 	existingSub, err := db.GetSubscriptionBySubID(context.Background(), subID)
 	if err != nil {
@@ -967,6 +970,16 @@ func ProcessClaimSubscriptionLink(c telebot.Context, text string) error {
 			return c.Send("این اشتراک در حال حاضر در لیست سرویس‌های شما قرار دارد.")
 		}
 		return c.Send("این اشتراک قبلا توسط کاربر دیگری ثبت شده است. در صورت نیاز با پشتیبانی در ارتباط باشید.")
+	}
+
+	// Check if there is already a pending claim for this subID
+	pendingExists, err := db.HasPendingClaimRequest(context.Background(), subID)
+	if err != nil {
+		log.Printf("Error checking DB for pending claim subID %s: %v", subID, err)
+	}
+	if pendingExists {
+		bot.FSM.ClearState(user.TelegramID)
+		return c.Send("درخواست ثبت برای این اشتراک قبلا ثبت شده است و در انتظار بررسی ادمین می‌باشد.")
 	}
 
 	// 2. Fetch all clients from 3x-ui to verify it exists
