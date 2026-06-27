@@ -157,6 +157,7 @@ func HandleViewSubscription(c telebot.Context) error {
 }
 
 func showSubscriptionDetail(c telebot.Context, user *db.User, sub *db.Subscription) error {
+	syncIPLimitFromXUI(sub)
 	statusIcon := "🔴 غیرفعال"
 	if sub.IsActive {
 		statusIcon = "🟢 فعال"
@@ -311,6 +312,7 @@ func HandleSubscriptionLimitMenu(c telebot.Context) error {
 	if !ok {
 		return nil
 	}
+	syncIPLimitFromXUI(sub)
 	if sub.PlanType != db.PlanTypePaid {
 		return c.Send("تغییر سقف کاربر همزمان فقط برای سرویس‌های خریداری شده امکان‌پذیر است.")
 	}
@@ -515,6 +517,7 @@ func HandleSubscriptionExtendMenu(c telebot.Context) error {
 	if !ok {
 		return nil
 	}
+	syncIPLimitFromXUI(sub)
 	if sub.PlanType != db.PlanTypePaid {
 		return c.Send("تمدید فقط برای سرویس‌های خریداری شده امکان‌پذیر است.")
 	}
@@ -611,6 +614,7 @@ func showExtendConfirmation(c telebot.Context, user *db.User, subID int, months 
 	if err != nil || sub == nil || sub.UserID != user.ID {
 		return c.Send("اشتراک یافت نشد.")
 	}
+	syncIPLimitFromXUI(sub)
 	plan, err := paidPlanForSub(sub)
 	if err != nil || plan == nil {
 		return c.Send("طرح مرتبط یافت نشد.")
@@ -661,6 +665,7 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 	if err != nil || sub == nil || sub.UserID != user.ID {
 		return c.Send("اشتراک یافت نشد.")
 	}
+	syncIPLimitFromXUI(sub)
 	if sub.PlanType != db.PlanTypePaid {
 		return c.Send("تمدید فقط برای سرویس‌های خریداری شده امکان‌پذیر است.")
 	}
@@ -741,6 +746,7 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 	if err != nil || sub == nil || sub.UserID != user.ID {
 		return c.Send("اشتراک یافت نشد.")
 	}
+	syncIPLimitFromXUI(sub)
 	plan, err := paidPlanForSub(sub)
 	if err != nil || plan == nil {
 		return c.Send("طرح یافت نشد.")
@@ -1053,6 +1059,27 @@ func ProcessClaimSubscriptionLink(c telebot.Context, text string) error {
 	}
 
 	return showMainMenu(c, user)
+}
+
+func syncIPLimitFromXUI(sub *db.Subscription) {
+	if bot.XUIClient == nil {
+		return
+	}
+	clients, err := bot.XUIClient.ListClients()
+	if err != nil {
+		log.Printf("XUI ListClients failed during sync: %v", err)
+		return
+	}
+	for _, client := range clients {
+		if client.Email == sub.ClientEmail {
+			if client.LimitIP > 0 && client.LimitIP != sub.IPLimit {
+				log.Printf("Syncing IP limit for %s: DB had %d, XUI has %d", sub.ClientEmail, sub.IPLimit, client.LimitIP)
+				sub.IPLimit = client.LimitIP
+				_ = db.UpdateSubscription(context.Background(), sub)
+			}
+			break
+		}
+	}
 }
 
 
