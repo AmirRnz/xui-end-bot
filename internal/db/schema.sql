@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS test_plans (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    usage_description TEXT NOT NULL DEFAULT '',
     inbound_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     expire_seconds BIGINT NOT NULL DEFAULT 3600,
     max_data_bytes BIGINT NOT NULL DEFAULT 0,
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS paid_plans (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    usage_description TEXT NOT NULL DEFAULT '',
     inbound_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     base_price NUMERIC(14, 2) NOT NULL DEFAULT 0,
     base_ip_limit INT NOT NULL DEFAULT 1,
@@ -229,6 +231,12 @@ ALTER TABLE IF EXISTS paid_plans
     ADD COLUMN IF NOT EXISTS min_data_gb BIGINT NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS price_per_extra_month NUMERIC(14, 2) NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE IF EXISTS test_plans
+    ADD COLUMN IF NOT EXISTS usage_description TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE IF EXISTS paid_plans
+    ADD COLUMN IF NOT EXISTS usage_description TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE IF EXISTS subscriptions
     ADD COLUMN IF NOT EXISTS traffic_limit_bytes BIGINT NOT NULL DEFAULT 0;

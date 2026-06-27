@@ -266,8 +266,8 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	durationStr := humanDuration(plan.ExpireSeconds)
 	detailsMsg := fmt.Sprintf("✅ اشتراک تست رایگان شما آماده شد!\n📦 طرح: %s\n⏱️ مدت اعتبار: %s (پس از اولین اتصال شروع می‌شود)\n📊 حجم مجاز: %s", plan.Name, durationStr, dataLimitStr)
 
-	if plan.Description != "" {
-		detailsMsg += fmt.Sprintf("\n\nنکات استفاده:\n%s", plan.Description)
+	if plan.UsageDescription != "" {
+		detailsMsg += fmt.Sprintf("\n\nنکات استفاده:\n%s", plan.UsageDescription)
 	}
 
 	if err := sendSubscriptionResult(c, subLink, detailsMsg); err != nil {

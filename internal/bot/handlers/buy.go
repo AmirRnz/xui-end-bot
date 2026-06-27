@@ -777,8 +777,8 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 	detailsMsg := fmt.Sprintf("✅ اشتراک شما با موفقیت فعال شد!\n📦 طرح: %s\n⏱️ مدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\n📊 سقف ترافیک: %s\n💰 هزینه پرداخت شده: %.0f %s",
 		plan.Name, months, dataLabel, price, currency)
 
-	if plan.Description != "" {
-		detailsMsg += fmt.Sprintf("\n\nنکات استفاده:\n%s", plan.Description)
+	if plan.UsageDescription != "" {
+		detailsMsg += fmt.Sprintf("\n\nنکات استفاده:\n%s", plan.UsageDescription)
 	}
 
 	if err := sendSubscriptionResult(c, subLink, detailsMsg); err != nil {

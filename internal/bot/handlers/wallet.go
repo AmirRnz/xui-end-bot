@@ -516,8 +516,8 @@ func createSubscriptionFromApprovedRequest(user *db.User, plan *db.PaidPlan, req
 	detailsMsg := fmt.Sprintf("✅ پرداخت شما تایید و اشتراک با موفقیت فعال شد!\n📦 طرح: %s\n⏱️ مدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\n📊 سقف ترافیک: %s\n💰 هزینه پرداخت شده: %.0f %s",
 		plan.Name, req.Months, dataLabel, req.Price, currency)
 
-	if plan.Description != "" {
-		detailsMsg += fmt.Sprintf("\n\nنکات استفاده:\n%s", plan.Description)
+	if plan.UsageDescription != "" {
+		detailsMsg += fmt.Sprintf("\n\nنکات استفاده:\n%s", plan.UsageDescription)
 	}
 
 	_ = sendSubscriptionResultTo(user.TelegramID, subLink, detailsMsg)

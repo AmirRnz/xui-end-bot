@@ -57,10 +57,11 @@ type DiscountTier struct {
 }
 
 type TestPlan struct {
-	ID            int64     `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	InboundIDs    []int     `json:"inbound_ids"`
+	ID               int64     `json:"id"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description"`
+	UsageDescription string    `json:"usage_description"`
+	InboundIDs       []int     `json:"inbound_ids"`
 	ExpireSeconds int64     `json:"expire_seconds"`
 	MaxDataBytes  int64     `json:"max_data_bytes"`
 	Flow          string    `json:"flow"`
@@ -76,6 +77,7 @@ type PaidPlan struct {
 	ID                 int64          `json:"id"`
 	Name               string         `json:"name"`
 	Description        string         `json:"description"`
+	UsageDescription   string         `json:"usage_description"`
 	InboundIDs         []int          `json:"inbound_ids"`
 	BasePrice          float64        `json:"base_price"`
 	BaseIPLimit        int            `json:"base_ip_limit"`

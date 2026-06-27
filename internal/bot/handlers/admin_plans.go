@@ -105,18 +105,19 @@ func HandleCreateTestPlan(c telebot.Context) error {
 	}
 
 	draft := map[string]interface{}{
-		"id":               int64(0),
-		"type":             "test",
-		"name":             "",
-		"description":      "",
-		"inbound_ids":      []int{},
-		"expire_seconds":   int64(3600),
-		"max_data_bytes":   int64(0),
-		"flow":             "",
-		"max_per_day":      1,
-		"is_global":        true,
-		"allowed_user_ids": []int64{},
-		"sync_subs":        true,
+		"id":                int64(0),
+		"type":              "test",
+		"name":              "",
+		"description":       "",
+		"usage_description": "",
+		"inbound_ids":       []int{},
+		"expire_seconds":    int64(3600),
+		"max_data_bytes":    int64(0),
+		"flow":              "",
+		"max_per_day":       1,
+		"is_global":         true,
+		"allowed_user_ids":  []int64{},
+		"sync_subs":         true,
 	}
 
 	bot.FSM.SetState(user.TelegramID, "awaiting_admin_test_plan_menu", draft)
@@ -130,23 +131,24 @@ func HandleCreatePaidPlan(c telebot.Context) error {
 	}
 
 	draft := map[string]interface{}{
-		"id":                 int64(0),
-		"type":               "paid",
-		"name":               "",
-		"description":        "",
-		"inbound_ids":        []int{},
-		"base_price":         0.0,
-		"base_ip_limit":      1,
-		"max_ip_limit":       1,
-		"price_per_extra_ip": 0.0,
-		"flow":               "",
-		"discount_tiers":     []db.DiscountTier{},
-		"is_global":          true,
-		"allowed_user_ids":   []int64{},
-		"sync_subs":          true,
-		"is_limited":         false,
-		"price_per_gb":       0.0,
-		"min_data_gb":        int64(0),
+		"id":                    int64(0),
+		"type":                  "paid",
+		"name":                  "",
+		"description":           "",
+		"usage_description":     "",
+		"inbound_ids":           []int{},
+		"base_price":            0.0,
+		"base_ip_limit":         1,
+		"max_ip_limit":          1,
+		"price_per_extra_ip":    0.0,
+		"flow":                  "",
+		"discount_tiers":        []db.DiscountTier{},
+		"is_global":             true,
+		"allowed_user_ids":      []int64{},
+		"sync_subs":             true,
+		"is_limited":            false,
+		"price_per_gb":          0.0,
+		"min_data_gb":           int64(0),
 		"price_per_extra_month": 0.0,
 	}
 
@@ -175,18 +177,19 @@ func HandleAdminPlanEdit(c telebot.Context) error {
 		}
 
 		draft := map[string]interface{}{
-			"id":               plan.ID,
-			"type":             "test",
-			"name":             plan.Name,
-			"description":      plan.Description,
-			"inbound_ids":      plan.InboundIDs,
-			"expire_seconds":   plan.ExpireSeconds,
-			"max_data_bytes":   plan.MaxDataBytes,
-			"flow":             plan.Flow,
-			"max_per_day":      plan.MaxPerDay,
-			"is_global":        plan.IsGlobal,
-			"allowed_user_ids": allowedUserIDs,
-			"sync_subs":        plan.SyncSubs,
+			"id":                plan.ID,
+			"type":              "test",
+			"name":              plan.Name,
+			"description":       plan.Description,
+			"usage_description": plan.UsageDescription,
+			"inbound_ids":       plan.InboundIDs,
+			"expire_seconds":    plan.ExpireSeconds,
+			"max_data_bytes":    plan.MaxDataBytes,
+			"flow":              plan.Flow,
+			"max_per_day":       plan.MaxPerDay,
+			"is_global":         plan.IsGlobal,
+			"allowed_user_ids":  allowedUserIDs,
+			"sync_subs":         plan.SyncSubs,
 		}
 
 		bot.FSM.SetState(user.TelegramID, "awaiting_admin_test_plan_menu", draft)
@@ -198,23 +201,24 @@ func HandleAdminPlanEdit(c telebot.Context) error {
 		}
 
 		draft := map[string]interface{}{
-			"id":                 plan.ID,
-			"type":               "paid",
-			"name":               plan.Name,
-			"description":        plan.Description,
-			"inbound_ids":        plan.InboundIDs,
-			"base_price":         plan.BasePrice,
-			"base_ip_limit":      plan.BaseIPLimit,
-			"max_ip_limit":       plan.MaxIPLimit,
-			"price_per_extra_ip": plan.PricePerExtraIP,
-			"flow":               plan.Flow,
-			"discount_tiers":     plan.DiscountTiers,
-			"is_global":          plan.IsGlobal,
-			"allowed_user_ids":   allowedUserIDs,
-			"sync_subs":          plan.SyncSubs,
-			"is_limited":         plan.IsLimited,
-			"price_per_gb":       plan.PricePerGB,
-			"min_data_gb":        plan.MinDataGB,
+			"id":                    plan.ID,
+			"type":                  "paid",
+			"name":                  plan.Name,
+			"description":           plan.Description,
+			"usage_description":     plan.UsageDescription,
+			"inbound_ids":           plan.InboundIDs,
+			"base_price":            plan.BasePrice,
+			"base_ip_limit":         plan.BaseIPLimit,
+			"max_ip_limit":          plan.MaxIPLimit,
+			"price_per_extra_ip":    plan.PricePerExtraIP,
+			"flow":                  plan.Flow,
+			"discount_tiers":        plan.DiscountTiers,
+			"is_global":             plan.IsGlobal,
+			"allowed_user_ids":      allowedUserIDs,
+			"sync_subs":             plan.SyncSubs,
+			"is_limited":            plan.IsLimited,
+			"price_per_gb":          plan.PricePerGB,
+			"min_data_gb":           plan.MinDataGB,
 			"price_per_extra_month": plan.PricePerExtraMonth,
 		}
 
@@ -226,6 +230,7 @@ func HandleAdminPlanEdit(c telebot.Context) error {
 func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{}) error {
 	name := draftGetString(draft, "name")
 	description := draftGetString(draft, "description")
+	usageDescription := draftGetString(draft, "usage_description")
 	inboundIDs := draftGetIntSlice(draft, "inbound_ids")
 	expireSeconds := draftGetInt64(draft, "expire_seconds")
 	maxDataBytes := draftGetInt64(draft, "max_data_bytes")
@@ -245,6 +250,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 	text := fmt.Sprintf("🧪 **Draft Test Plan Config**\n\n"+
 		"📝 Name: %s\n"+
 		"📝 Description: %s\n"+
+		"📝 Usage Notes: %s\n"+
 		"📡 Inbounds: %s\n"+
 		"⏱️ Duration: %s\n"+
 		"💾 Max Data: %s\n"+
@@ -254,6 +260,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 		"🔄 Sync Active Subscribers: %t\n",
 		nonEmpty(name, "(not set)"),
 		nonEmpty(description, "(not set)"),
+		nonEmpty(usageDescription, "(not set)"),
 		inboundLabel,
 		durationLabel,
 		dataLabel,
@@ -264,7 +271,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
-		menu.Row(menu.Data("📝 Name", "admin_draft_edit", "test:name"), menu.Data("📝 Description", "admin_draft_edit", "test:description")),
+		menu.Row(menu.Data("📝 Name", "admin_draft_edit", "test:name"), menu.Data("📝 Description", "admin_draft_edit", "test:description"), menu.Data("📝 Usage Notes", "admin_draft_edit", "test:usage_description")),
 		menu.Row(menu.Data("📡 Inbound IDs", "admin_draft_inbounds", "test"), menu.Data("⏱️ Duration", "admin_draft_edit", "test:duration")),
 		menu.Row(menu.Data("💾 Max Data", "admin_draft_edit", "test:max_data"), menu.Data("⚡ Flow", "admin_draft_edit", "test:flow")),
 		menu.Row(menu.Data("📊 Max/Day", "admin_draft_edit", "test:max_per_day"), menu.Data("👥 Access", "admin_draft_edit", "test:access")),
@@ -277,6 +284,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{}) error {
 	name := draftGetString(draft, "name")
 	description := draftGetString(draft, "description")
+	usageDescription := draftGetString(draft, "usage_description")
 	inboundIDs := draftGetIntSlice(draft, "inbound_ids")
 	basePrice := draftGetFloat64(draft, "base_price")
 	baseIP := draftGetInt(draft, "base_ip_limit")
@@ -309,6 +317,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 	text := fmt.Sprintf("💼 **Draft Paid Plan Config**\n\n"+
 		"📝 Name: %s\n"+
 		"📝 Description: %s\n"+
+		"📝 Usage Notes: %s\n"+
 		"📡 Inbounds: %s\n"+
 		"📊 Plan Type: %s\n"+
 		"%s"+
@@ -320,6 +329,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		"🔄 Sync Active Subscribers: %t\n",
 		nonEmpty(name, "(not set)"),
 		nonEmpty(description, "(not set)"),
+		nonEmpty(usageDescription, "(not set)"),
 		inboundLabel,
 		map[bool]string{true: "Limited", false: "Unlimited"}[isLimited],
 		priceBlock,
@@ -333,7 +343,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 
 	menu := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
-	rows = append(rows, menu.Row(menu.Data("📝 Name", "admin_draft_edit", "paid:name"), menu.Data("📝 Description", "admin_draft_edit", "paid:description")))
+	rows = append(rows, menu.Row(menu.Data("📝 Name", "admin_draft_edit", "paid:name"), menu.Data("📝 Description", "admin_draft_edit", "paid:description"), menu.Data("📝 Usage Notes", "admin_draft_edit", "paid:usage_description")))
 	rows = append(rows, menu.Row(menu.Data("📡 Inbounds", "admin_draft_inbounds", "paid")))
 
 	typeLabel := "📊 Type: Unlimited"
@@ -435,6 +445,8 @@ func HandleAdminDraftEdit(c telebot.Context) error {
 		prompt = "📝 Send the plan name (e.g., 'Monthly Standard'):"
 	case "description":
 		prompt = "📝 Send the plan description (e.g., 'Fast Trial'):"
+	case "usage_description":
+		prompt = "📝 Send the post-purchase usage description / connection notes (e.g., VLESS configs or rules):"
 	case "price":
 		prompt = "💵 Send the base price (e.g., '200000'):"
 	case "price_per_gb":
@@ -500,6 +512,8 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		draft["name"] = text
 	case "description":
 		draft["description"] = text
+	case "usage_description":
+		draft["usage_description"] = text
 	case "price":
 		val, err := strconv.ParseFloat(text, 64)
 		if err != nil || val < 0 {
@@ -775,19 +789,21 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 		flow := draftGetString(draft, "flow")
 		maxPerDay := draftGetInt(draft, "max_per_day")
 		description := draftGetString(draft, "description")
+		usageDescription := draftGetString(draft, "usage_description")
 
 		plan := &db.TestPlan{
-			ID:            id,
-			Name:          name,
-			Description:   description,
-			InboundIDs:    inboundIDs,
-			ExpireSeconds: expireSeconds,
-			MaxDataBytes:  maxDataBytes,
-			Flow:          flow,
-			MaxPerDay:     maxPerDay,
-			IsGlobal:      isGlobal,
-			Enabled:       true,
-			SyncSubs:      draftGetBool(draft, "sync_subs"),
+			ID:               id,
+			Name:             name,
+			Description:      description,
+			UsageDescription: usageDescription,
+			InboundIDs:       inboundIDs,
+			ExpireSeconds:    expireSeconds,
+			MaxDataBytes:     maxDataBytes,
+			Flow:             flow,
+			MaxPerDay:        maxPerDay,
+			IsGlobal:         isGlobal,
+			Enabled:          true,
+			SyncSubs:         draftGetBool(draft, "sync_subs"),
 		}
 
 		if id > 0 {
@@ -827,6 +843,7 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 
 	} else {
 		description := draftGetString(draft, "description")
+		usageDescription := draftGetString(draft, "usage_description")
 		basePrice := draftGetFloat64(draft, "base_price")
 		baseIP := draftGetInt(draft, "base_ip_limit")
 		maxIP := draftGetInt(draft, "max_ip_limit")
@@ -842,6 +859,7 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 			ID:                 id,
 			Name:               name,
 			Description:        description,
+			UsageDescription:   usageDescription,
 			InboundIDs:         inboundIDs,
 			BasePrice:          basePrice,
 			BaseIPLimit:        baseIP,
@@ -1204,10 +1222,10 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 		enabled = plan.Enabled
 		access, _ := db.GetPlanUserAccess(context.Background(), planType, planID)
 		text = fmt.Sprintf("🧪 **Test plan #%d**\n"+
-			"Name: %s\nDescription: %s\nEnabled: %t\nGlobal: %t\n"+
+			"Name: %s\nDescription: %s\nUsage Notes: %s\nEnabled: %t\nGlobal: %t\n"+
 			"Inbounds: %s\nDuration: %s\nMax data: %.2f GB\n"+
 			"Flow: %s\nMax/day: %d\nPrivate users: %v",
-			plan.ID, plan.Name, plan.Description, plan.Enabled, plan.IsGlobal,
+			plan.ID, plan.Name, plan.Description, plan.UsageDescription, plan.Enabled, plan.IsGlobal,
 			inboundLabel(plan.InboundIDs), humanDuration(plan.ExpireSeconds),
 			float64(plan.MaxDataBytes)/1073741824, plan.Flow, plan.MaxPerDay, access)
 	} else {
@@ -1226,10 +1244,10 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 		}
 
 		text = fmt.Sprintf("💼 **Paid plan #%d**\n"+
-			"Name: %s\nDescription: %s\nEnabled: %t\nGlobal: %t\n"+
+			"Name: %s\nDescription: %s\nUsage Notes: %s\nEnabled: %t\nGlobal: %t\n"+
 			"Inbounds: %s\n%s\nIP: %d-%d\n"+
 			"Extra IP: %.0f\nFlow: %s\nDiscounts: %+v\nPrivate users: %v",
-			plan.ID, plan.Name, plan.Description, plan.Enabled, plan.IsGlobal,
+			plan.ID, plan.Name, plan.Description, plan.UsageDescription, plan.Enabled, plan.IsGlobal,
 			inboundLabel(plan.InboundIDs), priceBlock, plan.BaseIPLimit, plan.MaxIPLimit,
 			plan.PricePerExtraIP, plan.Flow, plan.DiscountTiers, access)
 	}

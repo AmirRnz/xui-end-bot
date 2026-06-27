@@ -14,7 +14,7 @@ func GetTestPlansForUser(ctx context.Context, userID int64, includeDisabled bool
 	defer cancel()
 
 	query := `
-		SELECT p.id, p.name, p.description, p.inbound_ids, p.expire_seconds, p.max_data_bytes, p.flow, p.max_per_day, p.is_global, p.enabled, p.sync_subs, p.created_at, p.updated_at
+		SELECT p.id, p.name, p.description, p.usage_description, p.inbound_ids, p.expire_seconds, p.max_data_bytes, p.flow, p.max_per_day, p.is_global, p.enabled, p.sync_subs, p.created_at, p.updated_at
 		FROM test_plans p
 		WHERE ($2 OR p.enabled)
 		  AND (
@@ -52,7 +52,7 @@ func GetTestPlanByID(ctx context.Context, id int64) (*TestPlan, error) {
 	defer cancel()
 
 	row := Pool.QueryRow(ctx, `
-		SELECT id, name, description, inbound_ids, expire_seconds, max_data_bytes, flow, max_per_day, is_global, enabled, sync_subs, created_at, updated_at
+		SELECT id, name, description, usage_description, inbound_ids, expire_seconds, max_data_bytes, flow, max_per_day, is_global, enabled, sync_subs, created_at, updated_at
 		FROM test_plans WHERE id = $1
 	`, id)
 	p, err := scanTestPlanRow(row)
@@ -74,11 +74,11 @@ func CreateTestPlan(ctx context.Context, p *TestPlan) error {
 		p.MaxPerDay = 1
 	}
 	query := `
-		INSERT INTO test_plans (name, description, inbound_ids, expire_seconds, max_data_bytes, flow, max_per_day, is_global, enabled, sync_subs)
-		VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO test_plans (name, description, usage_description, inbound_ids, expire_seconds, max_data_bytes, flow, max_per_day, is_global, enabled, sync_subs)
+		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, created_at, updated_at
 	`
-	return Pool.QueryRow(ctx, query, p.Name, p.Description, string(inboundJSON), p.ExpireSeconds, p.MaxDataBytes, p.Flow, p.MaxPerDay, p.IsGlobal, p.Enabled, p.SyncSubs).
+	return Pool.QueryRow(ctx, query, p.Name, p.Description, p.UsageDescription, string(inboundJSON), p.ExpireSeconds, p.MaxDataBytes, p.Flow, p.MaxPerDay, p.IsGlobal, p.Enabled, p.SyncSubs).
 		Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -92,10 +92,10 @@ func UpdateTestPlan(ctx context.Context, p *TestPlan) error {
 	}
 	_, err = Pool.Exec(ctx, `
 		UPDATE test_plans
-		SET name = $1, description = $2, inbound_ids = $3::jsonb, expire_seconds = $4, max_data_bytes = $5,
-			flow = $6, max_per_day = $7, is_global = $8, enabled = $9, sync_subs = $10, updated_at = NOW()
-		WHERE id = $11
-	`, p.Name, p.Description, string(inboundJSON), p.ExpireSeconds, p.MaxDataBytes, p.Flow, p.MaxPerDay, p.IsGlobal, p.Enabled, p.SyncSubs, p.ID)
+		SET name = $1, description = $2, usage_description = $3, inbound_ids = $4::jsonb, expire_seconds = $5, max_data_bytes = $6,
+			flow = $7, max_per_day = $8, is_global = $9, enabled = $10, sync_subs = $11, updated_at = NOW()
+		WHERE id = $12
+	`, p.Name, p.Description, p.UsageDescription, string(inboundJSON), p.ExpireSeconds, p.MaxDataBytes, p.Flow, p.MaxPerDay, p.IsGlobal, p.Enabled, p.SyncSubs, p.ID)
 	return err
 }
 
@@ -104,7 +104,7 @@ func GetPaidPlansForUser(ctx context.Context, userID int64, includeDisabled bool
 	defer cancel()
 
 	query := `
-		SELECT p.id, p.name, p.description, p.inbound_ids, p.base_price, p.base_ip_limit, p.max_ip_limit, p.price_per_extra_ip, p.flow, p.discount_tiers, p.is_global, p.enabled, p.sync_subs, p.is_limited, p.price_per_gb, p.min_data_gb, p.price_per_extra_month, p.created_at, p.updated_at
+		SELECT p.id, p.name, p.description, p.usage_description, p.inbound_ids, p.base_price, p.base_ip_limit, p.max_ip_limit, p.price_per_extra_ip, p.flow, p.discount_tiers, p.is_global, p.enabled, p.sync_subs, p.is_limited, p.price_per_gb, p.min_data_gb, p.price_per_extra_month, p.created_at, p.updated_at
 		FROM paid_plans p
 		WHERE ($2 OR p.enabled)
 		  AND (
@@ -142,7 +142,7 @@ func GetPaidPlanByID(ctx context.Context, id int64) (*PaidPlan, error) {
 	defer cancel()
 
 	row := Pool.QueryRow(ctx, `
-		SELECT id, name, description, inbound_ids, base_price, base_ip_limit, max_ip_limit, price_per_extra_ip, flow, discount_tiers, is_global, enabled, sync_subs, is_limited, price_per_gb, min_data_gb, price_per_extra_month, created_at, updated_at
+		SELECT id, name, description, usage_description, inbound_ids, base_price, base_ip_limit, max_ip_limit, price_per_extra_ip, flow, discount_tiers, is_global, enabled, sync_subs, is_limited, price_per_gb, min_data_gb, price_per_extra_month, created_at, updated_at
 		FROM paid_plans WHERE id = $1
 	`, id)
 	p, err := scanPaidPlanRow(row)
@@ -165,11 +165,11 @@ func CreatePaidPlan(ctx context.Context, p *PaidPlan) error {
 		return err
 	}
 	query := `
-		INSERT INTO paid_plans (name, description, inbound_ids, base_price, base_ip_limit, max_ip_limit, price_per_extra_ip, flow, discount_tiers, is_global, enabled, sync_subs, is_limited, price_per_gb, min_data_gb, price_per_extra_month)
-		VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16)
+		INSERT INTO paid_plans (name, description, usage_description, inbound_ids, base_price, base_ip_limit, max_ip_limit, price_per_extra_ip, flow, discount_tiers, is_global, enabled, sync_subs, is_limited, price_per_gb, min_data_gb, price_per_extra_month)
+		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17)
 		RETURNING id, created_at, updated_at
 	`
-	return Pool.QueryRow(ctx, query, p.Name, p.Description, string(inboundJSON), p.BasePrice, p.BaseIPLimit, p.MaxIPLimit, p.PricePerExtraIP, p.Flow, string(tierJSON), p.IsGlobal, p.Enabled, p.SyncSubs, p.IsLimited, p.PricePerGB, p.MinDataGB, p.PricePerExtraMonth).
+	return Pool.QueryRow(ctx, query, p.Name, p.Description, p.UsageDescription, string(inboundJSON), p.BasePrice, p.BaseIPLimit, p.MaxIPLimit, p.PricePerExtraIP, p.Flow, string(tierJSON), p.IsGlobal, p.Enabled, p.SyncSubs, p.IsLimited, p.PricePerGB, p.MinDataGB, p.PricePerExtraMonth).
 		Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -187,11 +187,11 @@ func UpdatePaidPlan(ctx context.Context, p *PaidPlan) error {
 	}
 	_, err = Pool.Exec(ctx, `
 		UPDATE paid_plans
-		SET name = $1, description = $2, inbound_ids = $3::jsonb, base_price = $4, base_ip_limit = $5, max_ip_limit = $6,
-			price_per_extra_ip = $7, flow = $8, discount_tiers = $9::jsonb, is_global = $10, enabled = $11, sync_subs = $12,
-			is_limited = $13, price_per_gb = $14, min_data_gb = $15, price_per_extra_month = $16, updated_at = NOW()
-		WHERE id = $17
-	`, p.Name, p.Description, string(inboundJSON), p.BasePrice, p.BaseIPLimit, p.MaxIPLimit, p.PricePerExtraIP, p.Flow, string(tierJSON), p.IsGlobal, p.Enabled, p.SyncSubs, p.IsLimited, p.PricePerGB, p.MinDataGB, p.PricePerExtraMonth, p.ID)
+		SET name = $1, description = $2, usage_description = $3, inbound_ids = $4::jsonb, base_price = $5, base_ip_limit = $6, max_ip_limit = $7,
+			price_per_extra_ip = $8, flow = $9, discount_tiers = $10::jsonb, is_global = $11, enabled = $12, sync_subs = $13,
+			is_limited = $14, price_per_gb = $15, min_data_gb = $16, price_per_extra_month = $17, updated_at = NOW()
+		WHERE id = $18
+	`, p.Name, p.Description, p.UsageDescription, string(inboundJSON), p.BasePrice, p.BaseIPLimit, p.MaxIPLimit, p.PricePerExtraIP, p.Flow, string(tierJSON), p.IsGlobal, p.Enabled, p.SyncSubs, p.IsLimited, p.PricePerGB, p.MinDataGB, p.PricePerExtraMonth, p.ID)
 	return err
 }
 
@@ -416,7 +416,7 @@ func CreatePlan(ctx context.Context, p *Plan) error {
 func scanTestPlanRows(rows pgx.Rows) (*TestPlan, error) {
 	var inboundJSON []byte
 	p := &TestPlan{}
-	err := rows.Scan(&p.ID, &p.Name, &p.Description, &inboundJSON, &p.ExpireSeconds, &p.MaxDataBytes, &p.Flow, &p.MaxPerDay, &p.IsGlobal, &p.Enabled, &p.SyncSubs, &p.CreatedAt, &p.UpdatedAt)
+	err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.UsageDescription, &inboundJSON, &p.ExpireSeconds, &p.MaxDataBytes, &p.Flow, &p.MaxPerDay, &p.IsGlobal, &p.Enabled, &p.SyncSubs, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +429,7 @@ func scanTestPlanRows(rows pgx.Rows) (*TestPlan, error) {
 func scanTestPlanRow(row pgx.Row) (*TestPlan, error) {
 	var inboundJSON []byte
 	p := &TestPlan{}
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &inboundJSON, &p.ExpireSeconds, &p.MaxDataBytes, &p.Flow, &p.MaxPerDay, &p.IsGlobal, &p.Enabled, &p.SyncSubs, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.UsageDescription, &inboundJSON, &p.ExpireSeconds, &p.MaxDataBytes, &p.Flow, &p.MaxPerDay, &p.IsGlobal, &p.Enabled, &p.SyncSubs, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +442,7 @@ func scanTestPlanRow(row pgx.Row) (*TestPlan, error) {
 func scanPaidPlanRows(rows pgx.Rows) (*PaidPlan, error) {
 	var inboundJSON, tierJSON []byte
 	p := &PaidPlan{}
-	err := rows.Scan(&p.ID, &p.Name, &p.Description, &inboundJSON, &p.BasePrice, &p.BaseIPLimit, &p.MaxIPLimit, &p.PricePerExtraIP, &p.Flow, &tierJSON, &p.IsGlobal, &p.Enabled, &p.SyncSubs, &p.IsLimited, &p.PricePerGB, &p.MinDataGB, &p.PricePerExtraMonth, &p.CreatedAt, &p.UpdatedAt)
+	err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.UsageDescription, &inboundJSON, &p.BasePrice, &p.BaseIPLimit, &p.MaxIPLimit, &p.PricePerExtraIP, &p.Flow, &tierJSON, &p.IsGlobal, &p.Enabled, &p.SyncSubs, &p.IsLimited, &p.PricePerGB, &p.MinDataGB, &p.PricePerExtraMonth, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +458,7 @@ func scanPaidPlanRows(rows pgx.Rows) (*PaidPlan, error) {
 func scanPaidPlanRow(row pgx.Row) (*PaidPlan, error) {
 	var inboundJSON, tierJSON []byte
 	p := &PaidPlan{}
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &inboundJSON, &p.BasePrice, &p.BaseIPLimit, &p.MaxIPLimit, &p.PricePerExtraIP, &p.Flow, &tierJSON, &p.IsGlobal, &p.Enabled, &p.SyncSubs, &p.IsLimited, &p.PricePerGB, &p.MinDataGB, &p.PricePerExtraMonth, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.UsageDescription, &inboundJSON, &p.BasePrice, &p.BaseIPLimit, &p.MaxIPLimit, &p.PricePerExtraIP, &p.Flow, &tierJSON, &p.IsGlobal, &p.Enabled, &p.SyncSubs, &p.IsLimited, &p.PricePerGB, &p.MinDataGB, &p.PricePerExtraMonth, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
