@@ -437,7 +437,9 @@ func createSubscriptionFromApprovedRequest(user *db.User, plan *db.PaidPlan, req
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
 	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", plan.Name, userIdentifier(user))
-	client := newClientConfig(req.ClientEmail, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, req.IPLimit, plan.Flow, subID, clientUUID, comment)
+	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
+	adjustedIPLimit := ApplyIPLimitFactor(req.IPLimit, factor)
+	client := newClientConfig(req.ClientEmail, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, adjustedIPLimit, plan.Flow, subID, clientUUID, comment)
 
 	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
 	if err != nil {
@@ -467,7 +469,7 @@ func createSubscriptionFromApprovedRequest(user *db.User, plan *db.PaidPlan, req
 		Status:            "active",
 		PlanType:          db.PlanTypePaid,
 		DisplayName:       req.CustomName,
-		IPLimit:           req.IPLimit,
+		IPLimit:           adjustedIPLimit,
 		ExpireTime:        &expireMilli,
 		IsActive:          true,
 		StartDate:         nowUTC(),
@@ -575,7 +577,8 @@ func extendSubscriptionFromApprovedRequest(user *db.User, sub *db.Subscription, 
 
 func upgradeSubscriptionIPFromApprovedRequest(user *db.User, sub *db.Subscription, req *db.PurchaseRequest) error {
 	oldLimit := sub.IPLimit
-	sub.IPLimit = req.IPLimit
+	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
+	sub.IPLimit = ApplyIPLimitFactor(req.IPLimit, factor)
 
 	if err := updateXUIFromSubscription(sub); err != nil {
 		sub.IPLimit = oldLimit

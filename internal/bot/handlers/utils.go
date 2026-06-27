@@ -411,3 +411,49 @@ func diffIntSlices(oldSlice, newSlice []int) (added, removed []int) {
 	return
 }
 
+func ApplyIPLimitFactor(ipLimit int, factorSetting string) int {
+	factorSetting = strings.TrimSpace(factorSetting)
+	if factorSetting == "" {
+		return ipLimit
+	}
+	if strings.HasPrefix(factorSetting, "*") {
+		num, err := strconv.Atoi(factorSetting[1:])
+		if err == nil && num > 0 {
+			return ipLimit * num
+		}
+	} else if strings.HasPrefix(factorSetting, "+") {
+		num, err := strconv.Atoi(factorSetting[1:])
+		if err == nil && num >= 0 {
+			return ipLimit + num
+		}
+	}
+	return ipLimit
+}
+
+func ReverseIPLimitFactor(adjustedIPLimit int, factorSetting string) int {
+	factorSetting = strings.TrimSpace(factorSetting)
+	if factorSetting == "" {
+		return adjustedIPLimit
+	}
+	if strings.HasPrefix(factorSetting, "*") {
+		num, err := strconv.Atoi(factorSetting[1:])
+		if err == nil && num > 0 {
+			res := adjustedIPLimit / num
+			if res < 1 {
+				return 1
+			}
+			return res
+		}
+	} else if strings.HasPrefix(factorSetting, "+") {
+		num, err := strconv.Atoi(factorSetting[1:])
+		if err == nil && num >= 0 {
+			res := adjustedIPLimit - num
+			if res < 1 {
+				return 1
+			}
+			return res
+		}
+	}
+	return adjustedIPLimit
+}
+

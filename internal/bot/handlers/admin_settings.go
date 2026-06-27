@@ -40,11 +40,14 @@ func RegisterAdminSettings(b *telebot.Bot, auth telebot.MiddlewareFunc, admin te
 	b.Handle("\fadmin_set_group_name", func(c telebot.Context) error {
 		return settingPrompt(c, "awaiting_setting_group_name", "Send group name for subscriptions.")
 	}, auth, admin)
+	b.Handle("\fadmin_set_ip_limit_factor", func(c telebot.Context) error {
+		return settingPrompt(c, "awaiting_setting_ip_limit_factor", "Send IP limit factor multiplier/addition (e.g. '*2' or '+3'). Send '0' or leave empty to disable.")
+	}, auth, admin)
 	b.Handle("\fadmin_reset_tests", HandleAdminResetTests, auth, admin)
 }
 
 func HandleAdminSettings(c telebot.Context) error {
-	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "test_reset_days", "support_username", "expiry_notify_days", "group_name"}
+	keys := []string{"card_number", "card_owner", "currency_name", "min_topup_amount", "test_reset_days", "support_username", "expiry_notify_days", "group_name", "ip_limit_factor"}
 	values := map[string]string{}
 	for _, key := range keys {
 		values[key], _ = db.GetSetting(context.Background(), key)
@@ -52,9 +55,12 @@ func HandleAdminSettings(c telebot.Context) error {
 	if values["test_reset_days"] == "" {
 		values["test_reset_days"] = "30"
 	}
+	if values["ip_limit_factor"] == "" {
+		values["ip_limit_factor"] = "none"
+	}
 
-	text := fmt.Sprintf("⚙️ **Settings**\n\n💳 Card: %s\n👤 Owner: %s\n💱 Currency: %s\n💰 Minimum top-up: %s\n⏱️ Test reset days: %s\n🆘 Support username: %s\n🔔 Expiry notify days: %s\n👥 Group Name: %s",
-		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["test_reset_days"], values["support_username"], values["expiry_notify_days"], values["group_name"])
+	text := fmt.Sprintf("⚙️ **Settings**\n\n💳 Card: %s\n👤 Owner: %s\n💱 Currency: %s\n💰 Minimum top-up: %s\n⏱️ Test reset days: %s\n🆘 Support username: %s\n🔔 Expiry notify days: %s\n👥 Group Name: %s\n🌐 IP Limit Factor: %s",
+		values["card_number"], values["card_owner"], values["currency_name"], values["min_topup_amount"], values["test_reset_days"], values["support_username"], values["expiry_notify_days"], values["group_name"], values["ip_limit_factor"])
 
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
@@ -62,7 +68,7 @@ func HandleAdminSettings(c telebot.Context) error {
 		menu.Row(menu.Data("💱 Currency", "admin_set_currency"), menu.Data("💰 Min top-up", "admin_set_min_topup")),
 		menu.Row(menu.Data("📝 Top-up text", "admin_set_topup_desc"), menu.Data("⏱️ Test reset days", "admin_set_test_reset_days")),
 		menu.Row(menu.Data("🆘 Support User", "admin_set_support_username"), menu.Data("🔔 Expiry days", "admin_set_expiry_notify_days")),
-		menu.Row(menu.Data("👥 Group Name", "admin_set_group_name")),
+		menu.Row(menu.Data("👥 Group Name", "admin_set_group_name"), menu.Data("🌐 IP Limit Factor", "admin_set_ip_limit_factor")),
 		menu.Row(menu.Data("🔄 Reset All User Tests", "admin_reset_tests")),
 		menu.Row(menu.Data("« Back", "admin_menu")),
 	)
@@ -100,6 +106,22 @@ func ProcessSettingText(c telebot.Context, key string, value string) error {
 			if err != nil || v <= 0 {
 				return c.Send("Expiry notification days must be positive integers separated by commas.")
 			}
+		}
+	case "ip_limit_factor":
+		if value != "" && value != "0" {
+			if !strings.HasPrefix(value, "*") && !strings.HasPrefix(value, "+") {
+				return c.Send("IP limit factor must start with '*' or '+' followed by a number (e.g. '*2' or '+3'). Send '0' or leave empty to disable.")
+			}
+			numStr := value[1:]
+			num, err := strconv.Atoi(numStr)
+			if err != nil || num < 0 {
+				return c.Send("Invalid factor number. It must be a positive integer.")
+			}
+			if strings.HasPrefix(value, "*") && num == 0 {
+				return c.Send("Multiplier cannot be 0.")
+			}
+		} else {
+			value = ""
 		}
 	}
 	if err := db.SetSetting(context.Background(), key, value); err != nil {

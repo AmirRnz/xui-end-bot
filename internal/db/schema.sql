@@ -216,7 +216,8 @@ INSERT INTO bot_settings (key, value) VALUES
     ('currency_name', 'IRR'),
     ('currency_symbol', ''),
     ('expiry_notify_days', '3,1'),
-    ('group_name', '')
+    ('group_name', ''),
+    ('ip_limit_factor', '')
 ON CONFLICT (key) DO NOTHING;
 
 ALTER TABLE IF EXISTS test_plans
