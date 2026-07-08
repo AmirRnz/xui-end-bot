@@ -989,6 +989,14 @@ func TestE2ESuite(t *testing.T) {
 		// 25. Extend active subscription
 		t.Run("ExtendSubscription", func(t *testing.T) {
 			setupApprovedUserWithSub()
+
+			// Manually set sub to inactive in DB to simulate expired state
+			subBefore, _ := db.GetSubscriptionByID(env.ctx, 1)
+			subBefore.IsActive = false
+			if err := db.UpdateSubscription(env.ctx, subBefore); err != nil {
+				t.Fatalf("Failed to disable subscription: %v", err)
+			}
+
 			env.SendCallback(userTGID, userUsername, 999, "\fview_sub|1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend|1")
@@ -1000,10 +1008,13 @@ func TestE2ESuite(t *testing.T) {
 				t.Fatalf("Expected extension success, got: %+v", resp)
 			}
 
-			// Verify DB (balance deducted) and expiry increased
+			// Verify DB (balance deducted) and expiry increased, and set back to active
 			sub, _ := db.GetSubscriptionByID(env.ctx, 1)
 			if sub.ExpireTime == nil {
 				t.Fatalf("Sub should have expiry time")
+			}
+			if !sub.IsActive {
+				t.Fatalf("Expected subscription to be active after extension")
 			}
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
 			if u.WalletBalance != 1000 { // 2000 - 1000 extension cost

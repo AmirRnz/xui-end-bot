@@ -692,6 +692,7 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 		val := *sub.ExpireTime
 		oldExpireTime = &val
 	}
+	oldIsActive := sub.IsActive
 
 	var newExpiryMilli int64
 	var newExpiryLabel string
@@ -712,15 +713,19 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 		newExpiryLabel = sub.EndDate.Format("2006-01-02")
 	}
 
+	sub.IsActive = true
+
 	if err := updateXUIFromSubscription(sub); err != nil {
 		sub.EndDate = oldEnd
 		sub.ExpireTime = oldExpireTime
+		sub.IsActive = oldIsActive
 		_ = db.CreditWalletBalance(context.Background(), user.ID, cost, "refund failed extension")
 		return c.Send("خطا در بروزرسانی پنل. مبلغ تمدید به کیف پول شما بازگردانده شد.")
 	}
 	if err := db.UpdateSubscription(context.Background(), sub); err != nil {
 		sub.EndDate = oldEnd
 		sub.ExpireTime = oldExpireTime
+		sub.IsActive = oldIsActive
 		_ = db.CreditWalletBalance(context.Background(), user.ID, cost, "refund failed extension save")
 		return c.Send("خطا در ذخیره‌سازی دیتابیس. مبلغ تمدید به کیف پول شما بازگردانده شد.")
 	}
@@ -1085,9 +1090,18 @@ func syncIPLimitFromXUI(sub *db.Subscription) {
 	}
 	for _, client := range clients {
 		if client.Email == sub.ClientEmail {
+			changed := false
 			if client.LimitIP > 0 && client.LimitIP != sub.IPLimit {
 				log.Printf("Syncing IP limit for %s: DB had %d, XUI has %d", sub.ClientEmail, sub.IPLimit, client.LimitIP)
 				sub.IPLimit = client.LimitIP
+				changed = true
+			}
+			if sub.IsActive != client.Enable {
+				log.Printf("Syncing IsActive status for %s: DB had %t, XUI has %t", sub.ClientEmail, sub.IsActive, client.Enable)
+				sub.IsActive = client.Enable
+				changed = true
+			}
+			if changed {
 				_ = db.UpdateSubscription(context.Background(), sub)
 			}
 			break
