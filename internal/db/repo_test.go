@@ -267,8 +267,8 @@ func TestDeletePlanWithUsage(t *testing.T) {
 	// 2. Create a test plan
 	var planID int64
 	err = Pool.QueryRow(ctx, `
-		INSERT INTO test_plans (name, description, inbound_ids, expire_seconds, max_data_bytes, max_per_day, is_global, enabled)
-		VALUES ('Test Plan Delete', 'Desc', '[]'::jsonb, 3600, 0, 1, true, true)
+		INSERT INTO test_plans (name, description, inbound_ids, expire_seconds, max_data_bytes, ip_limit, max_per_day, is_global, enabled)
+		VALUES ('Test Plan Delete', 'Desc', '[]'::jsonb, 3600, 0, 1, 1, true, true)
 		RETURNING id
 	`).Scan(&planID)
 	if err != nil {

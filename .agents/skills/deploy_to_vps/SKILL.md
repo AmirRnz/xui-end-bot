@@ -5,7 +5,7 @@ description: Deploy the latest pushed changes to the VPS by pulling the git repo
 
 # Deploy to VPS
 
-When you are asked to use this skill, perform the deployment immediately using the `finland-mcp-server` server's `execute-command` tool. You can assume the user has already committed and pushed their changes.
+When you are asked to use this skill, perform the deployment immediately using the `finland-mcp-server` and `falk-mcp-server`, we have two bots live on two different server. server's `execute-command` tool. You can assume the user has already committed and pushed their changes.
 
 Based on previous deployments, here are the correct paths and commands you must use:
 1. **Directory**: The bot is located at `/opt/xui-end-bot`.

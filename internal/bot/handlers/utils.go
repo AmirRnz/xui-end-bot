@@ -412,6 +412,9 @@ func diffIntSlices(oldSlice, newSlice []int) (added, removed []int) {
 }
 
 func ApplyIPLimitFactor(ipLimit int, factorSetting string) int {
+	if ipLimit == 0 {
+		return 0
+	}
 	factorSetting = strings.TrimSpace(factorSetting)
 	if factorSetting == "" {
 		return ipLimit
@@ -431,6 +434,9 @@ func ApplyIPLimitFactor(ipLimit int, factorSetting string) int {
 }
 
 func ReverseIPLimitFactor(adjustedIPLimit int, factorSetting string) int {
+	if adjustedIPLimit == 0 {
+		return 0
+	}
 	factorSetting = strings.TrimSpace(factorSetting)
 	if factorSetting == "" {
 		return adjustedIPLimit
@@ -455,5 +461,12 @@ func ReverseIPLimitFactor(adjustedIPLimit int, factorSetting string) int {
 		}
 	}
 	return adjustedIPLimit
+}
+
+func formatIPLimit(ipLimit int) string {
+	if ipLimit == 0 {
+		return "نامحدود"
+	}
+	return fmt.Sprintf("%d", ipLimit)
 }
 

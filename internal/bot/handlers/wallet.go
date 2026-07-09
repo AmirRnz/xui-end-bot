@@ -201,11 +201,11 @@ func HandleReceiptPhoto(c telebot.Context) error {
 				var details string
 				switch pType {
 				case "buy":
-					details = fmt.Sprintf("خرید سرویس جدید\nطرح: %s\nایمیل: %s\nمدت: %d ماه\nکاربر همزمان: %d\nحجم: %d گیگابایت", customName, email, months, ipLimit, dataGB)
+					details = fmt.Sprintf("خرید سرویس جدید\nطرح: %s\nایمیل: %s\nمدت: %d ماه\nکاربر همزمان: %s\nحجم: %d گیگابایت", customName, email, months, formatIPLimit(ipLimit), dataGB)
 				case "extend":
 					details = fmt.Sprintf("تمدید سرویس\nشناسه اشتراک: %d\nمدت تمدید: %d ماه", *subIDPtr, months)
 				case "upgrade_ip":
-					details = fmt.Sprintf("ارتقای تعداد کاربر همزمان\nشناسه اشتراک: %d\nتعداد کاربر جدید: %d", *subIDPtr, ipLimit)
+					details = fmt.Sprintf("ارتقای تعداد کاربر همزمان\nشناسه اشتراک: %d\nتعداد کاربر جدید: %s", *subIDPtr, formatIPLimit(ipLimit))
 				}
 
 				caption := fmt.Sprintf("📥 درخواست خرید مستقیم #%d\nکاربر: @%s (%d)\nنوع: %s\nمبلغ: %.0f %s\n\nجزئیات:\n%s",
@@ -603,8 +603,8 @@ func upgradeSubscriptionIPFromApprovedRequest(user *db.User, sub *db.Subscriptio
 		currency = "IRR"
 	}
 
-	msg := fmt.Sprintf("✅ پرداخت شما تایید و سقف کاربر همزمان اشتراک **%s** به %d دستگاه ارتقا یافت.\nهزینه ارتقا پرداخت شده: %.0f %s.",
-		sub.DisplayName, req.IPLimit, req.Price, currency)
+	msg := fmt.Sprintf("✅ پرداخت شما تایید و سقف کاربر همزمان اشتراک **%s** به %s دستگاه ارتقا یافت.\nهزینه ارتقا پرداخت شده: %.0f %s.",
+		sub.DisplayName, formatIPLimit(req.IPLimit), req.Price, currency)
 	_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, FormatMarkdown(msg), telebot.ModeMarkdown)
 	return nil
 }
@@ -845,8 +845,8 @@ func HandleAdminPendingClaims(c telebot.Context) error {
 		))
 		menu.Inline(rows...)
 
-		caption := fmt.Sprintf("📥 **درخواست ثبت اشتراک دستی #%d**\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %d\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
-			req.ID, username, req.UserID, req.ClientEmail, req.CustomName, req.IPLimit, req.DataGB)
+		caption := fmt.Sprintf("📥 **درخواست ثبت اشتراک دستی #%d**\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %s\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
+			req.ID, username, req.UserID, req.ClientEmail, req.CustomName, formatIPLimit(req.IPLimit), req.DataGB)
 
 		_, _ = bot.Bot.Send(c.Sender(), FormatMarkdown(caption), menu, telebot.ModeMarkdown)
 	}

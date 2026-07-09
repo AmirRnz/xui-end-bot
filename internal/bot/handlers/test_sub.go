@@ -198,7 +198,9 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
 	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", plan.Name, userIdentifier(user))
-	client := newClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, 1, plan.Flow, subID, clientUUID, comment)
+	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
+	adjustedIPLimit := ApplyIPLimitFactor(plan.IPLimit, factor)
+	client := newClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, adjustedIPLimit, plan.Flow, subID, clientUUID, comment)
 	inboundIDs := validInboundIDs(plan.InboundIDs)
 	if len(inboundIDs) == 0 {
 		return c.Send("این طرح تست هیچ کانکشن معتبری ندارد.")
@@ -233,7 +235,7 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 		Status:      "active",
 		PlanType:    db.PlanTypeTest,
 		DisplayName: email,
-		IPLimit:     1,
+		IPLimit:     adjustedIPLimit,
 		ExpireTime:  &expireMilli,
 		IsActive:    true,
 		StartDate:   nowUTC(),

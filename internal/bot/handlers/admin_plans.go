@@ -114,6 +114,7 @@ func HandleCreateTestPlan(c telebot.Context) error {
 		"expire_seconds":    int64(3600),
 		"max_data_bytes":    int64(0),
 		"flow":              "",
+		"ip_limit":          1,
 		"max_per_day":       1,
 		"is_global":         true,
 		"allowed_user_ids":  []int64{},
@@ -186,6 +187,7 @@ func HandleAdminPlanEdit(c telebot.Context) error {
 			"expire_seconds":    plan.ExpireSeconds,
 			"max_data_bytes":    plan.MaxDataBytes,
 			"flow":              plan.Flow,
+			"ip_limit":          plan.IPLimit,
 			"max_per_day":       plan.MaxPerDay,
 			"is_global":         plan.IsGlobal,
 			"allowed_user_ids":  allowedUserIDs,
@@ -235,6 +237,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 	expireSeconds := draftGetInt64(draft, "expire_seconds")
 	maxDataBytes := draftGetInt64(draft, "max_data_bytes")
 	flow := draftGetString(draft, "flow")
+	ipLimit := draftGetInt(draft, "ip_limit")
 	maxPerDay := draftGetInt(draft, "max_per_day")
 	isGlobal := draftGetBool(draft, "is_global")
 	syncSubs := draftGetBool(draft, "sync_subs")
@@ -247,6 +250,11 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 		dataLabel = fmt.Sprintf("%.2f GB", float64(maxDataBytes)/1073741824)
 	}
 
+	ipLabel := "Unlimited"
+	if ipLimit > 0 {
+		ipLabel = fmt.Sprintf("%d", ipLimit)
+	}
+
 	text := fmt.Sprintf("🧪 **Draft Test Plan Config**\n\n"+
 		"📝 Name: %s\n"+
 		"📝 Description: %s\n"+
@@ -255,6 +263,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 		"⏱️ Duration: %s\n"+
 		"💾 Max Data: %s\n"+
 		"⚡ Flow: %s\n"+
+		"🌐 IP Limit: %s\n"+
 		"📊 Max per day: %d\n"+
 		"👥 Access: %s\n"+
 		"🔄 Sync Active Subscribers: %t\n",
@@ -265,6 +274,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 		durationLabel,
 		dataLabel,
 		nonEmpty(flow, "(default/none)"),
+		ipLabel,
 		maxPerDay,
 		formatAccessLabel(isGlobal, allowedUserIDs),
 		syncSubs)
@@ -275,7 +285,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 		menu.Row(menu.Data("📡 Inbound IDs", "admin_draft_inbounds", "test"), menu.Data("⏱️ Duration", "admin_draft_edit", "test:duration")),
 		menu.Row(menu.Data("💾 Max Data", "admin_draft_edit", "test:max_data"), menu.Data("⚡ Flow", "admin_draft_edit", "test:flow")),
 		menu.Row(menu.Data("📊 Max/Day", "admin_draft_edit", "test:max_per_day"), menu.Data("👥 Access", "admin_draft_edit", "test:access")),
-		menu.Row(menu.Data("🔄 Sync Subs: "+toggleEmoji(syncSubs), "admin_draft_toggle_sync", "test")),
+		menu.Row(menu.Data("🌐 IP Limit", "admin_draft_edit", "test:ip_limit"), menu.Data("🔄 Sync Subs: "+toggleEmoji(syncSubs), "admin_draft_toggle_sync", "test")),
 		menu.Row(menu.Data("💾 Save", "admin_draft_action", "test:save"), menu.Data("❌ Cancel", "admin_draft_action", "test:cancel")),
 	)
 	return maybeEditOrSend(c, text, menu)
@@ -314,6 +324,13 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		priceBlock = fmt.Sprintf("💵 Base Price: %.0f\n", basePrice)
 	}
 
+	var ipLabel string
+	if baseIP == 0 && maxIP == 0 {
+		ipLabel = "Unlimited"
+	} else {
+		ipLabel = fmt.Sprintf("Base %d - Max %d", baseIP, maxIP)
+	}
+
 	text := fmt.Sprintf("💼 **Draft Paid Plan Config**\n\n"+
 		"📝 Name: %s\n"+
 		"📝 Description: %s\n"+
@@ -321,7 +338,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		"📡 Inbounds: %s\n"+
 		"📊 Plan Type: %s\n"+
 		"%s"+
-		"🌐 IP Limits: Base %d - Max %d\n"+
+		"🌐 IP Limits: %s\n"+
 		"💲 Extra IP Price: %.0f\n"+
 		"⚡ Flow: %s\n"+
 		"🏷️ Discounts: %s\n"+
@@ -333,8 +350,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		inboundLabel,
 		map[bool]string{true: "Limited", false: "Unlimited"}[isLimited],
 		priceBlock,
-		baseIP,
-		maxIP,
+		ipLabel,
 		extraIPPrice,
 		nonEmpty(flow, "(default/none)"),
 		discountLabel,
@@ -456,7 +472,9 @@ func HandleAdminDraftEdit(c telebot.Context) error {
 	case "price_per_extra_month":
 		prompt = "⏱️ Send the price per extra month (e.g., '20000'):"
 	case "ip_limits":
-		prompt = "🌐 Send the IP limits in 'base-max' format (e.g., '1-6' or '2-2'):"
+		prompt = "🌐 Send the IP limits in 'base-max' format (e.g., '1-6' or '2-2'), or '0' for unlimited:"
+	case "ip_limit":
+		prompt = "🌐 Send the IP limit (e.g., '1' or '2'), or '0' for unlimited:"
 	case "extra_ip":
 		prompt = "💲 Send the price per extra IP (e.g., '50000'):"
 	case "discounts":
@@ -539,17 +557,60 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		}
 		draft["price_per_extra_month"] = val
 	case "ip_limits":
-		parts := strings.Split(text, "-")
-		if len(parts) != 2 {
-			return c.Send("IP limits must be in format 'base-max' (e.g. '1-6'). Try again:")
+		baseIP := 0
+		maxIP := 0
+		var err error
+		if text == "0" || strings.ToLower(text) == "unlimited" {
+			baseIP = 0
+			maxIP = 0
+		} else {
+			parts := strings.Split(text, "-")
+			if len(parts) == 1 {
+				val, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+				if err != nil || val < 0 {
+					return c.Send("Invalid IP limit. Must be a positive integer, '0' or 'unlimited' for unlimited, or 'base-max' format. Try again:")
+				}
+				baseIP = val
+				maxIP = val
+			} else if len(parts) == 2 {
+				baseIP, err = strconv.Atoi(strings.TrimSpace(parts[0]))
+				if err != nil {
+					return c.Send("Invalid base IP limit. Try again:")
+				}
+				maxIP, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+				if err != nil {
+					return c.Send("Invalid max IP limit. Try again:")
+				}
+			} else {
+				return c.Send("IP limits must be a single number (e.g. '2' or '0' for unlimited) or in 'base-max' format (e.g. '1-6'). Try again:")
+			}
 		}
-		baseIP, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
-		maxIP, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
-		if err1 != nil || err2 != nil || baseIP <= 0 || maxIP < baseIP {
-			return c.Send("Invalid IP limits. Max IP must be >= Base IP > 0. Try again:")
+
+		if baseIP < 0 || maxIP < 0 {
+			return c.Send("IP limits cannot be negative. Try again:")
 		}
+		if baseIP == 0 && maxIP != 0 {
+			return c.Send("If base IP limit is 0 (unlimited), max IP limit must also be 0. Try again:")
+		}
+		if baseIP > 0 && maxIP < baseIP {
+			return c.Send("Max IP must be greater than or equal to Base IP. Try again:")
+		}
+
 		draft["base_ip_limit"] = baseIP
 		draft["max_ip_limit"] = maxIP
+
+	case "ip_limit":
+		val := 0
+		if text == "0" || strings.ToLower(text) == "unlimited" {
+			val = 0
+		} else {
+			var err error
+			val, err = strconv.Atoi(text)
+			if err != nil || val < 0 {
+				return c.Send("IP limit must be a positive integer, '0', or 'unlimited'. Try again:")
+			}
+		}
+		draft["ip_limit"] = val
 	case "extra_ip":
 		val, err := strconv.ParseFloat(text, 64)
 		if err != nil || val < 0 {
@@ -800,6 +861,7 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 			ExpireSeconds:    expireSeconds,
 			MaxDataBytes:     maxDataBytes,
 			Flow:             flow,
+			IPLimit:          draftGetInt(draft, "ip_limit"),
 			MaxPerDay:        maxPerDay,
 			IsGlobal:         isGlobal,
 			Enabled:          true,
@@ -1221,13 +1283,19 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 		}
 		enabled = plan.Enabled
 		access, _ := db.GetPlanUserAccess(context.Background(), planType, planID)
+
+		ipLabel := "Unlimited"
+		if plan.IPLimit > 0 {
+			ipLabel = fmt.Sprintf("%d", plan.IPLimit)
+		}
+
 		text = fmt.Sprintf("🧪 **Test plan #%d**\n"+
 			"Name: %s\nDescription: %s\nUsage Notes: %s\nEnabled: %t\nGlobal: %t\n"+
 			"Inbounds: %s\nDuration: %s\nMax data: %.2f GB\n"+
-			"Flow: %s\nMax/day: %d\nPrivate users: %v",
+			"Flow: %s\nIP Limit: %s\nMax/day: %d\nPrivate users: %v",
 			plan.ID, plan.Name, plan.Description, plan.UsageDescription, plan.Enabled, plan.IsGlobal,
 			inboundLabel(plan.InboundIDs), humanDuration(plan.ExpireSeconds),
-			float64(plan.MaxDataBytes)/1073741824, plan.Flow, plan.MaxPerDay, access)
+			float64(plan.MaxDataBytes)/1073741824, plan.Flow, ipLabel, plan.MaxPerDay, access)
 	} else {
 		plan, err := db.GetPaidPlanByID(context.Background(), planID)
 		if err != nil || plan == nil {
@@ -1243,12 +1311,17 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 			priceBlock = fmt.Sprintf("Type: Unlimited\nBase price: %.0f", plan.BasePrice)
 		}
 
+		ipLabel := fmt.Sprintf("%d-%d", plan.BaseIPLimit, plan.MaxIPLimit)
+		if plan.BaseIPLimit == 0 && plan.MaxIPLimit == 0 {
+			ipLabel = "Unlimited"
+		}
+
 		text = fmt.Sprintf("💼 **Paid plan #%d**\n"+
 			"Name: %s\nDescription: %s\nUsage Notes: %s\nEnabled: %t\nGlobal: %t\n"+
-			"Inbounds: %s\n%s\nIP: %d-%d\n"+
+			"Inbounds: %s\n%s\nIP: %s\n"+
 			"Extra IP: %.0f\nFlow: %s\nDiscounts: %+v\nPrivate users: %v",
 			plan.ID, plan.Name, plan.Description, plan.UsageDescription, plan.Enabled, plan.IsGlobal,
-			inboundLabel(plan.InboundIDs), priceBlock, plan.BaseIPLimit, plan.MaxIPLimit,
+			inboundLabel(plan.InboundIDs), priceBlock, ipLabel,
 			plan.PricePerExtraIP, plan.Flow, plan.DiscountTiers, access)
 	}
 

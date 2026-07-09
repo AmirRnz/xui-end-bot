@@ -227,7 +227,7 @@ func showSubscriptionDetail(c telebot.Context, user *db.User, sub *db.Subscripti
 	text.WriteString(fmt.Sprintf("📦 **%s**\n\n", sub.DisplayName))
 	text.WriteString(fmt.Sprintf("📧 **ایمیل اشتراک:** `%s`\n", sub.ClientEmail))
 	text.WriteString(fmt.Sprintf("⚡ **وضعیت سرویس:** %s\n", statusIcon))
-	text.WriteString(fmt.Sprintf("👥 **کاربر همزمان:** %d\n", displayIPLimit))
+	text.WriteString(fmt.Sprintf("👥 **کاربر همزمان:** %s\n", formatIPLimit(displayIPLimit)))
 	text.WriteString("⏳ " + expiryStr + "\n")
 	if trafficStr != "" {
 		text.WriteString("📊 " + trafficStr)
@@ -240,10 +240,22 @@ func showSubscriptionDetail(c telebot.Context, user *db.User, sub *db.Subscripti
 		),
 	}
 	if sub.PlanType == db.PlanTypePaid {
-		rows = append(rows, menu.Row(
-			menu.Data("📶 افزایش کاربر همزمان", "sub_limit", fmt.Sprintf("%d", sub.ID)),
-			menu.Data("⏳ تمدید سرویس", "sub_extend", fmt.Sprintf("%d", sub.ID)),
-		))
+		var hasIPUpgrade bool
+		if plan, _ := paidPlanForSub(sub); plan != nil {
+			if plan.MaxIPLimit > plan.BaseIPLimit && plan.BaseIPLimit > 0 {
+				hasIPUpgrade = true
+			}
+		}
+		if hasIPUpgrade {
+			rows = append(rows, menu.Row(
+				menu.Data("📶 افزایش کاربر همزمان", "sub_limit", fmt.Sprintf("%d", sub.ID)),
+				menu.Data("⏳ تمدید سرویس", "sub_extend", fmt.Sprintf("%d", sub.ID)),
+			))
+		} else {
+			rows = append(rows, menu.Row(
+				menu.Data("⏳ تمدید سرویس", "sub_extend", fmt.Sprintf("%d", sub.ID)),
+			))
+		}
 	}
 	rows = append(rows,
 		menu.Row(menu.Data("« بازگشت", "menu_my_services")),
@@ -323,6 +335,10 @@ func HandleSubscriptionLimitMenu(c telebot.Context) error {
 	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
 	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
 
+	if displayIPLimit == 0 || plan.MaxIPLimit == 0 {
+		return c.Send("تعداد کاربر همزمان برای اشتراک شما نامحدود است.")
+	}
+
 	if displayIPLimit >= plan.MaxIPLimit {
 		return c.Send(fmt.Sprintf("اشتراک شما در حال حاضر در حداکثر سقف کاربر همزمان مجاز طرح خود (%d کاربر) قرار دارد.", plan.MaxIPLimit))
 	}
@@ -346,7 +362,7 @@ func HandleSubscriptionLimitMenu(c telebot.Context) error {
 	}
 	rows = append(rows, menu.Row(menu.Data("« بازگشت", "view_sub", fmt.Sprintf("%d", sub.ID))))
 	menu.Inline(rows...)
-	return maybeEditOrSend(c, fmt.Sprintf("📶 ارتقای تعداد کاربران همزمان برای **%s**\nتعداد فعلی: %d کاربر", sub.DisplayName, displayIPLimit), menu)
+	return maybeEditOrSend(c, fmt.Sprintf("📶 ارتقای تعداد کاربران همزمان برای **%s**\nتعداد فعلی: %s کاربر", sub.DisplayName, formatIPLimit(displayIPLimit)), menu)
 }
 
 func HandleSubscriptionLimitConfirmPrompt(c telebot.Context) error {
@@ -392,8 +408,8 @@ func HandleSubscriptionLimitConfirmPrompt(c telebot.Context) error {
 	)
 
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"🧾 **ارتقای کاربر همزمان سرویس %s**\n\nتعداد کاربر جدید: %d دستگاه همزمان\nتعداد کاربر فعلی: %d دستگاه همزمان\nهزینه ارتقا (تا پایان دوره): **%.0f %s**\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت ارتقا را انتخاب کنید:",
-		sub.DisplayName, newLimit, displayIPLimit, cost, currency, user.WalletBalance, currency,
+		"🧾 **ارتقای کاربر همزمان سرویس %s**\n\nتعداد کاربر جدید: %s دستگاه همزمان\nتعداد کاربر فعلی: %s دستگاه همزمان\nهزینه ارتقا (تا پایان دوره): **%.0f %s**\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت ارتقا را انتخاب کنید:",
+		sub.DisplayName, formatIPLimit(newLimit), formatIPLimit(displayIPLimit), cost, currency, user.WalletBalance, currency,
 	), menu)
 }
 
@@ -446,8 +462,8 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 		return c.Send("خطا در ذخیره سازی دیتابیس. مبلغ ارتقا به کیف پول شما برگشت داده شد.")
 	}
 
-	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("✅ تعداد کاربر همزمان به %d افزایش یافت.", newLimit)})
-	_ = c.Send(fmt.Sprintf("✅ ارتقا با موفقیت انجام شد. سقف کاربر همزمان به %d کاربر افزایش یافت. هزینه کسر شده: %.0f %s.", newLimit, cost, currency))
+	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("✅ تعداد کاربر همزمان به %s افزایش یافت.", formatIPLimit(newLimit))})
+	_ = c.Send(fmt.Sprintf("✅ ارتقا با موفقیت انجام شد. سقف کاربر همزمان به %s کاربر افزایش یافت. هزینه کسر شده: %.0f %s.", formatIPLimit(newLimit), cost, currency))
 	return showSubscriptionDetail(c, user, sub)
 }
 
@@ -1069,8 +1085,8 @@ func ProcessClaimSubscriptionLink(c telebot.Context, text string) error {
 			))
 			menu.Inline(rows...)
 
-			caption := fmt.Sprintf("📥 **درخواست ثبت اشتراک دستی #%d**\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %d\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
-				req.ID, user.Username, user.TelegramID, req.ClientEmail, req.CustomName, req.IPLimit, req.DataGB)
+			caption := fmt.Sprintf("📥 **درخواست ثبت اشتراک دستی #%d**\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %s\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
+				req.ID, user.Username, user.TelegramID, req.ClientEmail, req.CustomName, formatIPLimit(req.IPLimit), req.DataGB)
 
 			_, _ = bot.Bot.Send(&telebot.User{ID: adminID}, FormatMarkdown(caption), menu, telebot.ModeMarkdown)
 		}

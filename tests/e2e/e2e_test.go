@@ -373,8 +373,8 @@ func cleanDB(ctx context.Context, t *testing.T) {
 
 	// Seed test plans
 	_, err = db.Pool.Exec(ctx, `
-		INSERT INTO test_plans (id, name, description, inbound_ids, expire_seconds, max_data_bytes, flow, max_per_day, is_global, enabled)
-		VALUES (1, 'Test Plan A', 'Test Description A', '[1]', 3600, 10737418240, '', 1, true, true)
+		INSERT INTO test_plans (id, name, description, inbound_ids, expire_seconds, max_data_bytes, flow, ip_limit, max_per_day, is_global, enabled)
+		VALUES (1, 'Test Plan A', 'Test Description A', '[1]', 3600, 10737418240, '', 1, 1, true, true)
 	`)
 	if err != nil {
 		t.Fatalf("Failed to seed test plans: %v", err)

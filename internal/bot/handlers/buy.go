@@ -283,7 +283,11 @@ func showIPChoicesLimited(c telebot.Context, plan *db.PaidPlan, months int, gb i
 	var rows []telebot.Row
 	for ip := plan.BaseIPLimit; ip <= plan.MaxIPLimit; ip++ {
 		price := calculatePaidPrice(plan, months, ip, gb)
-		rows = append(rows, menu.Row(menu.Data(fmt.Sprintf("%d کاربر همزمان — %.0f %s", ip, price, currency), "buy_ip_run_limited", fmt.Sprintf("%d:%d:%d:%d", ip, plan.ID, months, gb))))
+		ipText := fmt.Sprintf("%s کاربر همزمان", formatIPLimit(ip))
+		if ip == 0 {
+			ipText = "کاربر همزمان نامحدود"
+		}
+		rows = append(rows, menu.Row(menu.Data(fmt.Sprintf("%s — %.0f %s", ipText, price, currency), "buy_ip_run_limited", fmt.Sprintf("%d:%d:%d:%d", ip, plan.ID, months, gb))))
 		if len(rows) >= 10 {
 			break
 		}
@@ -331,8 +335,8 @@ func HandleBuyIPRunLimited(c telebot.Context) error {
 		menu.Row(menu.Data("🎲 انتخاب توسط ربات", "buy_auto_name")),
 	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"📦 **%s**\n%d گیگابایت، %d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
-		plan.Name, gb, months, ipLimit, price, currency), menu)
+		"📦 **%s**\n%d گیگابایت، %d ماهه، %s کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
+		plan.Name, gb, months, formatIPLimit(ipLimit), price, currency), menu)
 }
 
 func showIPChoices(c telebot.Context, planID int64, months int) error {
@@ -356,7 +360,11 @@ func showIPChoices(c telebot.Context, planID int64, months int) error {
 	var rows []telebot.Row
 	for ip := plan.BaseIPLimit; ip <= plan.MaxIPLimit; ip++ {
 		price := calculatePaidPrice(plan, months, ip, 0)
-		rows = append(rows, menu.Row(menu.Data(fmt.Sprintf("%d کاربر همزمان — %.0f %s", ip, price, currency), "buy_ip_run", fmt.Sprintf("%d:%d:%d", ip, plan.ID, months))))
+		ipText := fmt.Sprintf("%s کاربر همزمان", formatIPLimit(ip))
+		if ip == 0 {
+			ipText = "کاربر همزمان نامحدود"
+		}
+		rows = append(rows, menu.Row(menu.Data(fmt.Sprintf("%s — %.0f %s", ipText, price, currency), "buy_ip_run", fmt.Sprintf("%d:%d:%d", ip, plan.ID, months))))
 		if len(rows) >= 10 {
 			break
 		}
@@ -418,8 +426,8 @@ func HandleBuyIPRun(c telebot.Context) error {
 		menu.Row(menu.Data("🎲 انتخاب توسط ربات", "buy_auto_name")),
 	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"📦 **%s**\n%d ماهه، %d کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
-		plan.Name, months, ipLimit, price, currency), menu)
+		"📦 **%s**\n%d ماهه، %s کاربر همزمان\nقیمت: %.0f %s\n\nلطفا نام دلخواه برای اشتراک خود را ارسال کنید (فقط حروف و عدد انگلیسی):\n(یک پسوند تصادفی ۶ کاراکتری به انتهای نام انتخابی شما اضافه خواهد شد)",
+		plan.Name, months, formatIPLimit(ipLimit), price, currency), menu)
 }
 
 func ProcessBuyCustomName(c telebot.Context, customName string) error {
@@ -494,8 +502,8 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 		),
 	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"🧾 **خلاصه فاکتور خرید**\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %d\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
-		plan.Name, email, months, ipLimit, dataLabel, price, currency,
+		"🧾 **خلاصه فاکتور خرید**\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %s\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
+		plan.Name, email, months, formatIPLimit(ipLimit), dataLabel, price, currency,
 		user.WalletBalance, currency,
 	), menu)
 }
@@ -579,8 +587,8 @@ func HandleBuyAutoName(c telebot.Context) error {
 		),
 	)
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"🧾 **خلاصه فاکتور خرید**\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %d\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
-		plan.Name, email, months, ipLimit, dataLabel, price, currency,
+		"🧾 **خلاصه فاکتور خرید**\n\nطرح: %s\nاشتراک: %s\nمدت زمان: %d ماهه (پس از اولین اتصال شروع می‌شود)\nکاربر همزمان: %s\nسقف ترافیک: %s\nمبلغ کل: %.0f %s\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت را انتخاب کنید:",
+		plan.Name, email, months, formatIPLimit(ipLimit), dataLabel, price, currency,
 		user.WalletBalance, currency,
 	), menu)
 }
