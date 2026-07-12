@@ -100,5 +100,6 @@ type XUIClientInfo struct {
 	Enable     bool   `json:"enable"`
 	InboundIDs []int  `json:"inboundIds"`
 	LimitIP    int    `json:"limitIp"`
+	Comment    string `json:"comment"`
 }
 

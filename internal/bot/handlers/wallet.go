@@ -440,10 +440,7 @@ func createSubscriptionFromApprovedRequest(user *db.User, plan *db.PaidPlan, req
 	totalBytes := int64(req.DataGB) * 1073741824
 	subID := makeSubID()
 	clientUUID := makeClientUUID()
-	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", plan.Name, userIdentifier(user))
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	adjustedIPLimit := ApplyIPLimitFactor(req.IPLimit, factor)
-	client := newClientConfig(req.ClientEmail, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, adjustedIPLimit, plan.Flow, subID, clientUUID, comment)
+	client := prepareClientConfig(req.ClientEmail, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, req.IPLimit, plan.Flow, subID, clientUUID, plan.Name, user)
 
 	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
 	if err != nil {
@@ -473,7 +470,7 @@ func createSubscriptionFromApprovedRequest(user *db.User, plan *db.PaidPlan, req
 		Status:            "active",
 		PlanType:          db.PlanTypePaid,
 		DisplayName:       req.CustomName,
-		IPLimit:           adjustedIPLimit,
+		IPLimit:           req.IPLimit,
 		ExpireTime:        &expireMilli,
 		IsActive:          true,
 		StartDate:         nowUTC(),
@@ -586,8 +583,7 @@ func extendSubscriptionFromApprovedRequest(user *db.User, sub *db.Subscription, 
 
 func upgradeSubscriptionIPFromApprovedRequest(user *db.User, sub *db.Subscription, req *db.PurchaseRequest) error {
 	oldLimit := sub.IPLimit
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	sub.IPLimit = ApplyIPLimitFactor(req.IPLimit, factor)
+	sub.IPLimit = req.IPLimit
 
 	if err := updateXUIFromSubscription(sub); err != nil {
 		sub.IPLimit = oldLimit
@@ -738,9 +734,12 @@ func createSubscriptionFromApprovedClaim(user *db.User, plan *db.PaidPlan, req *
 	}
 
 	planID := int(plan.ID)
-	ipLimit := targetClient.LimitIP
-	if ipLimit <= 0 {
-		ipLimit = 1
+	devLimit, ok := parseDeviceLimitFromXUI(*targetClient)
+	ipLimit := 1
+	if ok && devLimit > 0 {
+		ipLimit = devLimit
+	} else if targetClient.LimitIP > 0 {
+		ipLimit = targetClient.LimitIP
 	}
 
 	clientUUID := targetClient.UUID

@@ -220,8 +220,7 @@ func showSubscriptionDetail(c telebot.Context, user *db.User, sub *db.Subscripti
 		}
 	}
 
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 
 	var text strings.Builder
 	text.WriteString(fmt.Sprintf("📦 **%s**\n\n", sub.DisplayName))
@@ -332,8 +331,7 @@ func HandleSubscriptionLimitMenu(c telebot.Context) error {
 	if err != nil || plan == nil {
 		return c.Send("طرح مرتبط یافت نشد.")
 	}
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 
 	if displayIPLimit == 0 || plan.MaxIPLimit == 0 {
 		return c.Send("تعداد کاربر همزمان برای اشتراک شما نامحدود است.")
@@ -383,8 +381,7 @@ func HandleSubscriptionLimitConfirmPrompt(c telebot.Context) error {
 		return c.Send("طرح یافت نشد.")
 	}
 
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 
 	months := monthsRemainingFrom(sub.EndDate)
 	if months < 1 {
@@ -433,8 +430,7 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 		return c.Send("طرح یافت نشد.")
 	}
 
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 
 	months := monthsRemainingFrom(sub.EndDate)
 	if months < 1 {
@@ -451,7 +447,7 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 	}
 
 	oldLimit := sub.IPLimit
-	sub.IPLimit = ApplyIPLimitFactor(newLimit, factor)
+	sub.IPLimit = newLimit
 	if err := updateXUIFromSubscription(sub); err != nil {
 		sub.IPLimit = oldLimit
 		_ = db.CreditWalletBalance(context.Background(), user.ID, cost, "refund failed IP upgrade")
@@ -484,8 +480,7 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 		return c.Send("طرح یافت نشد.")
 	}
 
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 
 	months := monthsRemainingFrom(sub.EndDate)
 	if months < 1 {
@@ -546,8 +541,7 @@ func HandleSubscriptionExtendMenu(c telebot.Context) error {
 		currency = "IRR"
 	}
 
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 
 	priceFor := func(months int) float64 {
 		dataGB := int(sub.TrafficLimitBytes / 1073741824)
@@ -636,8 +630,7 @@ func showExtendConfirmation(c telebot.Context, user *db.User, subID int, months 
 		return c.Send("طرح مرتبط یافت نشد.")
 	}
 	dataGB := int(sub.TrafficLimitBytes / 1073741824)
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 	cost := calculatePaidPrice(plan, months, displayIPLimit, dataGB)
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
@@ -690,8 +683,7 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 		return c.Send("طرح یافت نشد.")
 	}
 	dataGB := int(sub.TrafficLimitBytes / 1073741824)
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 	cost := calculatePaidPrice(plan, months, displayIPLimit, dataGB)
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
@@ -773,8 +765,7 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 		return c.Send("طرح یافت نشد.")
 	}
 	dataGB := int(sub.TrafficLimitBytes / 1073741824)
-	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
-	displayIPLimit := ReverseIPLimitFactor(sub.IPLimit, factor)
+	displayIPLimit := sub.IPLimit
 	cost := calculatePaidPrice(plan, months, displayIPLimit, dataGB)
 
 	card, _ := db.GetSetting(context.Background(), "card_number")
@@ -926,8 +917,7 @@ func clientConfigFromSubscription(sub *db.Subscription, email string) xui.Client
 			planName = plan.Name
 		}
 	}
-	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", planName, userIdentifier(user))
-	client := newClientConfig(email, group, tgID, total, expireMilli, sub.IPLimit, flow, sub.SubID, sub.ClientUUID, comment)
+	client := prepareClientConfig(email, group, tgID, total, expireMilli, sub.IPLimit, flow, sub.SubID, sub.ClientUUID, planName, user)
 	return client
 }
 
@@ -1107,9 +1097,9 @@ func syncIPLimitFromXUI(sub *db.Subscription) {
 	for _, client := range clients {
 		if client.Email == sub.ClientEmail {
 			changed := false
-			if client.LimitIP > 0 && client.LimitIP != sub.IPLimit {
-				log.Printf("Syncing IP limit for %s: DB had %d, XUI has %d", sub.ClientEmail, sub.IPLimit, client.LimitIP)
-				sub.IPLimit = client.LimitIP
+			if devLimit, ok := parseDeviceLimitFromXUI(client); ok && devLimit != sub.IPLimit {
+				log.Printf("Syncing device limit for %s: DB had %d, XUI has %d", sub.ClientEmail, sub.IPLimit, devLimit)
+				sub.IPLimit = devLimit
 				changed = true
 			}
 			if sub.IsActive != client.Enable {

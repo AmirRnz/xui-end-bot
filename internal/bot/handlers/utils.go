@@ -470,3 +470,84 @@ func formatIPLimit(ipLimit int) string {
 	return fmt.Sprintf("%d", ipLimit)
 }
 
+var devicesRegex = regexp.MustCompile(`devices:\s*(\d+)`)
+
+func parseDevicesFromComment(comment string) (int, bool) {
+	matches := devicesRegex.FindStringSubmatch(comment)
+	if len(matches) > 1 {
+		val, err := strconv.Atoi(matches[1])
+		if err == nil {
+			return val, true
+		}
+	}
+	return 0, false
+}
+
+func prepareClientConfig(email, group string, telegramID int64, totalBytes int64, expiryMilli int64, rawIPLimit int, flow string, subID string, clientUUID string, planName string, user *db.User) xui.ClientConfig {
+	mode, _ := db.GetSetting(context.Background(), "ip_limit_mode")
+	if mode == "" {
+		mode = "factor"
+	}
+	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
+
+	var limitIP int
+	comment := fmt.Sprintf("created by xui-end-bot, %s, %s", planName, userIdentifier(user))
+
+	switch mode {
+	case "exact":
+		limitIP = rawIPLimit
+	case "comment":
+		limitIP = 0
+		comment = fmt.Sprintf("%s, devices: %d", comment, rawIPLimit)
+	case "factor":
+		fallthrough
+	default:
+		limitIP = ApplyIPLimitFactor(rawIPLimit, factor)
+	}
+
+	flow = CleanFlow(flow)
+	return xui.ClientConfig{
+		ID:         clientUUID,
+		Email:      email,
+		Enable:     true,
+		ExpiryTime: expiryMilli,
+		Flow:       flow,
+		Group:      group,
+		LimitIP:    limitIP,
+		Reset:      0,
+		Security:   "auto",
+		SubID:      subID,
+		TgID:       telegramID,
+		TotalGB:    totalBytes,
+		Comment:    comment,
+		Password:   clientUUID,
+		Auth:       clientUUID,
+	}
+}
+
+func parseDeviceLimitFromXUI(client xui.XUIClientInfo) (int, bool) {
+	mode, _ := db.GetSetting(context.Background(), "ip_limit_mode")
+	if mode == "" {
+		mode = "factor"
+	}
+	factor, _ := db.GetSetting(context.Background(), "ip_limit_factor")
+
+	switch mode {
+	case "exact":
+		if client.LimitIP > 0 {
+			return client.LimitIP, true
+		}
+	case "comment":
+		if dev, ok := parseDevicesFromComment(client.Comment); ok {
+			return dev, true
+		}
+	case "factor":
+		fallthrough
+	default:
+		if client.LimitIP > 0 {
+			return ReverseIPLimitFactor(client.LimitIP, factor), true
+		}
+	}
+	return 0, false
+}
+
