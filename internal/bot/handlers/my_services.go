@@ -125,8 +125,13 @@ func showServicesPage(c telebot.Context, page int) error {
 		if sub.IsActive {
 			icon = "🟢"
 		}
-		expires := sub.EndDate.Format("2006-01-02")
-		text.WriteString(fmt.Sprintf("%s %s — تاریخ انقضا %s\n", icon, sub.ClientEmail, expires))
+		var expires string
+		if sub.ExpireTime != nil && *sub.ExpireTime < 0 {
+			expires = "شروع پس از اولین اتصال"
+		} else {
+			expires = "تاریخ انقضا " + sub.EndDate.Format("2006-01-02")
+		}
+		text.WriteString(fmt.Sprintf("%s %s — %s\n", icon, sub.ClientEmail, expires))
 		rows = append(rows, menu.Row(menu.Data(icon+" "+sub.DisplayName, "view_sub", fmt.Sprintf("%d", sub.ID))))
 	}
 
