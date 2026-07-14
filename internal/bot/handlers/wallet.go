@@ -794,7 +794,13 @@ func createSubscriptionFromApprovedClaim(user *db.User, plan *db.PaidPlan, req *
 	if subLink == "" {
 		subLink = bot.XUIClient.SubscriptionURLFor(sub.SubID)
 	}
-	detailsMsg := fmt.Sprintf("🔗 اشتراک: **%s**\n📅 تاریخ انقضا: %s", sub.DisplayName, sub.EndDate.Format("2006-01-02 15:04 UTC"))
+	var expiryStr string
+	if (sub.ExpireTime != nil && *sub.ExpireTime < 0) || sub.EndDate.IsZero() {
+		expiryStr = "شروع پس از اولین اتصال"
+	} else {
+		expiryStr = sub.EndDate.Format("2006-01-02 15:04 UTC")
+	}
+	detailsMsg := fmt.Sprintf("🔗 اشتراک: **%s**\n📅 تاریخ انقضا: %s", sub.DisplayName, expiryStr)
 	_ = sendSubscriptionResultTo(user.TelegramID, subLink, detailsMsg)
 
 	return nil
