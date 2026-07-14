@@ -74,16 +74,33 @@ func showServicesPage(c telebot.Context, page int) error {
 	if bot.XUIClient != nil {
 		clients, err := bot.XUIClient.ListClients()
 		if err == nil {
-			existingClients := make(map[string]bool)
+			existingClients := make(map[string]xui.XUIClientInfo)
 			for _, client := range clients {
 				if client.SubID != "" {
-					existingClients[client.SubID] = true
+					existingClients[client.SubID] = client
 				}
 			}
 
 			var activeSubs []*db.Subscription
 			for _, sub := range subs {
-				if existingClients[sub.SubID] {
+				if client, exists := existingClients[sub.SubID]; exists {
+					changed := false
+					if devLimit, ok := parseDeviceLimitFromXUI(client); ok && devLimit != sub.IPLimit {
+						log.Printf("Syncing device limit for %s during page load: DB had %d, XUI has %d", sub.ClientEmail, sub.IPLimit, devLimit)
+						sub.IPLimit = devLimit
+						changed = true
+					}
+					if sub.IsActive != client.Enable {
+						log.Printf("Syncing IsActive status for %s during page load: DB had %t, XUI has %t", sub.ClientEmail, sub.IsActive, client.Enable)
+						sub.IsActive = client.Enable
+						changed = true
+					}
+					if syncActivationExpiry(sub, client) {
+						changed = true
+					}
+					if changed {
+						_ = db.UpdateSubscription(context.Background(), sub)
+					}
 					activeSubs = append(activeSubs, sub)
 				} else {
 					log.Printf("Deleting orphan subscription %s (SubID: %s) from DB because it no longer exists on 3x-ui.", sub.ClientEmail, sub.SubID)
@@ -1090,6 +1107,17 @@ func ProcessClaimSubscriptionLink(c telebot.Context, text string) error {
 	return showMainMenu(c, user)
 }
 
+func syncActivationExpiry(sub *db.Subscription, client xui.XUIClientInfo) bool {
+	if client.ExpiryTime > 0 && (sub.ExpireTime == nil || *sub.ExpireTime < 0) {
+		log.Printf("Syncing activation expiry time for %s: XUI has %s", sub.ClientEmail, time.UnixMilli(client.ExpiryTime).Format("2006-01-02"))
+		val := client.ExpiryTime
+		sub.ExpireTime = &val
+		sub.EndDate = time.UnixMilli(client.ExpiryTime)
+		return true
+	}
+	return false
+}
+
 func syncIPLimitFromXUI(sub *db.Subscription) {
 	if bot.XUIClient == nil {
 		return
@@ -1110,6 +1138,9 @@ func syncIPLimitFromXUI(sub *db.Subscription) {
 			if sub.IsActive != client.Enable {
 				log.Printf("Syncing IsActive status for %s: DB had %t, XUI has %t", sub.ClientEmail, sub.IsActive, client.Enable)
 				sub.IsActive = client.Enable
+				changed = true
+			}
+			if syncActivationExpiry(sub, client) {
 				changed = true
 			}
 			if changed {
