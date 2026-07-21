@@ -21,7 +21,7 @@ Be proactive and explicit in using the available MCP servers:
 
 ## Deployment & Naming
 - The project is named `xui-end-bot`. All Go files and module name use the module path `xui-end-bot`.
-- The bot is deployed to the Finland VPS using the `finland-mcp-server` MCP server.
-- The remote deployment directory on the VPS is `/opt/xui-end-bot`.
-- The systemd service on the VPS is `xui-end-bot.service`.
+- The bots are deployed to the Finland VPS using the `finland-mcp-server` MCP server.
+- The primary bot is deployed in `/opt/xui-end-bot` and managed by `xui-end-bot.service`.
+- The secondary (Germany) bot is deployed in `/opt/xui-end-bot-germany` and managed by `xui-end-bot-germany.service`.
 
