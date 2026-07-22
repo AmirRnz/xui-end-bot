@@ -19,6 +19,23 @@ func CreateUser(ctx context.Context, u *User) error {
 		u.Status = UserStatusPending
 	}
 
+	cleanUsername := strings.TrimPrefix(strings.TrimSpace(u.Username), "@")
+
+	// If there is an existing placeholder user record created by admin via username (telegram_id < 0), update it with real telegram_id
+	if cleanUsername != "" && u.TelegramID > 0 {
+		var placeholderID int64
+		err := Pool.QueryRow(ctx, `SELECT id FROM bot_users WHERE LOWER(username) = LOWER($1) AND telegram_id < 0 LIMIT 1`, cleanUsername).Scan(&placeholderID)
+		if err == nil && placeholderID > 0 {
+			_, _ = Pool.Exec(ctx, `UPDATE bot_users SET telegram_id = $1, username = $2, first_name = $3, last_name = $4, updated_at = NOW() WHERE id = $5`,
+				u.TelegramID, cleanUsername, u.FirstName, u.LastName, placeholderID)
+			uFound, err := GetUserByID(ctx, placeholderID)
+			if err == nil && uFound != nil {
+				*u = *uFound
+			}
+			return nil
+		}
+	}
+
 	query := `
 		INSERT INTO bot_users (telegram_id, username, first_name, last_name, language, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
@@ -30,8 +47,21 @@ func CreateUser(ctx context.Context, u *User) error {
 		RETURNING id, telegram_id, username, first_name, last_name, language, status, service_name, wallet_balance, created_at, updated_at
 	`
 	return Pool.QueryRow(ctx, query,
-		u.TelegramID, u.Username, u.FirstName, u.LastName, u.Language, u.Status,
+		u.TelegramID, cleanUsername, u.FirstName, u.LastName, u.Language, u.Status,
 	).Scan(&u.ID, &u.TelegramID, &u.Username, &u.FirstName, &u.LastName, &u.Language, &u.Status, &u.ServiceName, &u.WalletBalance, &u.CreatedAt, &u.UpdatedAt)
+}
+
+func GetUserByUsername(ctx context.Context, username string) (*User, error) {
+	ctx, cancel := dbCtx(ctx)
+	defer cancel()
+
+	cleanUsername := strings.TrimPrefix(strings.TrimSpace(username), "@")
+	if cleanUsername == "" {
+		return nil, nil
+	}
+
+	query := `SELECT id, telegram_id, username, first_name, last_name, language, status, service_name, wallet_balance, created_at, updated_at FROM bot_users WHERE LOWER(username) = LOWER($1)`
+	return scanUser(Pool.QueryRow(ctx, query, cleanUsername))
 }
 
 func GetUserByTelegramID(ctx context.Context, telegramID int64) (*User, error) {

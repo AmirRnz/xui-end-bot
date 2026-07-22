@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"strconv"
 	"strings"
@@ -17,6 +18,17 @@ import (
 type CustomerDetail struct {
 	Name       string
 	TelegramID int64
+	Username   string
+}
+
+func makePlaceholderTelegramID(username string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(strings.ToLower(username)))
+	val := int64(h.Sum64() & 0x7FFFFFFF)
+	if val == 0 {
+		val = 1
+	}
+	return -val
 }
 
 func parseCustomerDetailsInput(input string) ([]CustomerDetail, error) {
@@ -37,7 +49,7 @@ func parseCustomerDetailsInput(input string) ([]CustomerDetail, error) {
 			continue
 		}
 
-		// Split by ':', '=', or '|'
+		var name, identifier string
 		var parts []string
 		if strings.Contains(item, ":") {
 			parts = strings.SplitN(item, ":", 2)
@@ -47,28 +59,41 @@ func parseCustomerDetailsInput(input string) ([]CustomerDetail, error) {
 			parts = strings.SplitN(item, "|", 2)
 		}
 
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("فرمت آیتم '%s' نامعتبر است. باید به صورت name:telegram_id باشد.", item)
-		}
-
-		name := sanitizeName(parts[0])
-		if name == "" {
+		if len(parts) == 2 {
 			name = strings.TrimSpace(parts[0])
-		}
-		if name == "" {
-			return nil, fmt.Errorf("نام در آیتم '%s' نامعتبر است.", item)
-		}
-
-		tgIDStr := strings.TrimSpace(parts[1])
-		tgID, err := strconv.ParseInt(tgIDStr, 10, 64)
-		if err != nil || tgID <= 0 {
-			return nil, fmt.Errorf("آی‌دی تلگرام '%s' در آیتم '%s' نامعتبر است.", tgIDStr, item)
+			identifier = strings.TrimSpace(parts[1])
+		} else {
+			identifier = item
 		}
 
-		results = append(results, CustomerDetail{
-			Name:       name,
-			TelegramID: tgID,
-		})
+		identifierClean := strings.TrimSpace(identifier)
+		tgID, err := strconv.ParseInt(identifierClean, 10, 64)
+
+		var detail CustomerDetail
+		if err == nil && tgID > 0 {
+			detail.TelegramID = tgID
+			if name == "" {
+				name = fmt.Sprintf("user_%d", tgID)
+			}
+		} else {
+			cleanUsername := strings.TrimPrefix(identifierClean, "@")
+			cleanUsername = strings.TrimSpace(cleanUsername)
+			if cleanUsername == "" {
+				return nil, fmt.Errorf("آی‌دی یا یوزرنیم تلگرام در آیتم '%s' نامعتبر است.", item)
+			}
+			detail.Username = cleanUsername
+			if name == "" {
+				name = cleanUsername
+			}
+		}
+
+		sName := sanitizeName(name)
+		if sName == "" {
+			sName = name
+		}
+		detail.Name = sName
+
+		results = append(results, detail)
 	}
 
 	if len(results) == 0 {
@@ -700,21 +725,46 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 
 	successCount := 0
 	for idx, cust := range customers {
-		// Fetch or create user in bot_users
-		targetUser, err := db.GetUserByTelegramID(ctx, cust.TelegramID)
-		if err != nil {
-			log.Printf("Error fetching user for telegram_id %d: %v", cust.TelegramID, err)
-		}
-		if targetUser == nil {
-			targetUser = &db.User{
-				TelegramID: cust.TelegramID,
-				FirstName:  cust.Name,
-				Status:     db.UserStatusApproved,
+		var targetUser *db.User
+		var err error
+
+		if cust.TelegramID > 0 {
+			targetUser, err = db.GetUserByTelegramID(ctx, cust.TelegramID)
+			if err != nil {
+				log.Printf("Error fetching user for telegram_id %d: %v", cust.TelegramID, err)
 			}
-			if err := db.CreateUser(ctx, targetUser); err != nil {
-				report.WriteString(fmt.Sprintf("❌ **%s** (%d): خطا در ایجاد کاربر در دیتابیس (%v)\n\n", cust.Name, cust.TelegramID, err))
-				continue
+			if targetUser == nil {
+				targetUser = &db.User{
+					TelegramID: cust.TelegramID,
+					FirstName:  cust.Name,
+					Status:     db.UserStatusApproved,
+				}
+				if err := db.CreateUser(ctx, targetUser); err != nil {
+					report.WriteString(fmt.Sprintf("❌ **%s** (%d): خطا در ایجاد کاربر در دیتابیس (%v)\n\n", cust.Name, cust.TelegramID, err))
+					continue
+				}
 			}
+		} else if cust.Username != "" {
+			targetUser, err = db.GetUserByUsername(ctx, cust.Username)
+			if err != nil {
+				log.Printf("Error fetching user for username %s: %v", cust.Username, err)
+			}
+			if targetUser == nil {
+				placeholderID := makePlaceholderTelegramID(cust.Username)
+				targetUser = &db.User{
+					TelegramID: placeholderID,
+					Username:   cust.Username,
+					FirstName:  cust.Name,
+					Status:     db.UserStatusApproved,
+				}
+				if err := db.CreateUser(ctx, targetUser); err != nil {
+					report.WriteString(fmt.Sprintf("❌ **%s** (@%s): خطا در ایجاد کاربر در دیتابیس (%v)\n\n", cust.Name, cust.Username, err))
+					continue
+				}
+			}
+		} else {
+			report.WriteString(fmt.Sprintf("❌ **%s**: مشخصات تلگرام (آی‌دی عددی یا یوزرنیم) نامعتبر است.\n\n", cust.Name))
+			continue
 		}
 
 		cleanBase := sanitizeName(cust.Name)
@@ -725,7 +775,7 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 		subID := makeSubID()
 		clientUUID := makeClientUUID()
 
-		clientConfig := prepareClientConfig(email, serviceGroup(adminUser), cust.TelegramID, totalBytes, expireMilli, ipLimit, flow, subID, clientUUID, planName, adminUser)
+		clientConfig := prepareClientConfig(email, serviceGroup(adminUser), targetUser.TelegramID, totalBytes, expireMilli, ipLimit, flow, subID, clientUUID, planName, adminUser)
 
 		err = bot.XUIClient.AddClient(xui.AddClientRequest{Client: clientConfig, InboundIDs: inboundIDs})
 		if err != nil {
@@ -739,7 +789,7 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 			}
 		}
 		if err != nil {
-			report.WriteString(fmt.Sprintf("❌ **%s** (%d): خطا در اضافه کردن کلاینت به پنل 3x-ui (%v)\n\n", cust.Name, cust.TelegramID, err))
+			report.WriteString(fmt.Sprintf("❌ **%s**: خطا در اضافه کردن کلاینت به پنل 3x-ui (%v)\n\n", cust.Name, err))
 			continue
 		}
 
@@ -762,20 +812,25 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 		if err := db.CreateSubscription(ctx, sub); err != nil {
 			log.Printf("CreateSubscription DB error for %s: %v. Rolling back XUI client...", email, err)
 			_ = bot.XUIClient.DeleteClient(email)
-			report.WriteString(fmt.Sprintf("❌ **%s** (%d): خطا در ثبت سرویس در دیتابیس (%v)\n\n", cust.Name, cust.TelegramID, err))
+			report.WriteString(fmt.Sprintf("❌ **%s**: خطا در ثبت سرویس در دیتابیس (%v)\n\n", cust.Name, err))
 			continue
 		}
 
 		subLink := bot.XUIClient.SubscriptionURLFor(subID)
 		successCount++
 
+		tgDisplay := fmt.Sprintf("%d", targetUser.TelegramID)
+		if targetUser.Username != "" {
+			tgDisplay = fmt.Sprintf("@%s", targetUser.Username)
+		}
+
 		report.WriteString(fmt.Sprintf("👤 **مشتری %d: %s**\n", idx+1, cust.Name))
-		report.WriteString(fmt.Sprintf("🆔 آی‌دی تلگرام: `%d`\n", cust.TelegramID))
+		report.WriteString(fmt.Sprintf("🆔 شناسه تلگرام: `%s`\n", tgDisplay))
 		report.WriteString(fmt.Sprintf("📧 ایمیل: `%s`\n", email))
 		report.WriteString(fmt.Sprintf("🔗 لینک اشتراک:\n`%s`\n\n", subLink))
 
 		// Send individual QR code and copyable sub link
-		detailsMsg := fmt.Sprintf("👤 سرویس ساخته شده برای **%s** (آی‌دی: `%d`)", cust.Name, cust.TelegramID)
+		detailsMsg := fmt.Sprintf("👤 سرویس ساخته شده برای **%s** (آی‌دی: `%s`)", cust.Name, tgDisplay)
 		_ = sendSubscriptionResult(c, subLink, detailsMsg)
 	}
 
