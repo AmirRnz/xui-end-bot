@@ -122,6 +122,14 @@ func HandleText(c telebot.Context) error {
 			return ProcessAdminPlanAccess(c, text)
 		case "awaiting_claim_subscription_link":
 			return ProcessClaimSubscriptionLink(c, text)
+		case "awaiting_admin_create_custom_datagb":
+			return ProcessAdminCreateCustomDataGBText(c, text)
+		case "awaiting_admin_create_custom_iplimit":
+			return ProcessAdminCreateCustomIPLimitText(c, text)
+		case "awaiting_admin_create_custom_months":
+			return ProcessAdminCreateCustomMonthsText(c, text)
+		case "awaiting_admin_create_client_details":
+			return ProcessAdminCreateClientDetails(c, text)
 		}
 	}
 

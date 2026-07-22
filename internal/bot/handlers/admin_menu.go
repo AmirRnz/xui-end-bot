@@ -15,11 +15,13 @@ func RegisterAdminMenu(b *telebot.Bot, auth telebot.MiddlewareFunc, admin telebo
 	RegisterAdminSettings(b, auth, admin)
 	RegisterAdminPlans(b, auth, admin)
 	RegisterAdminStats(b, auth, admin)
+	RegisterAdminCreateClient(b, auth, admin)
 }
 
 func HandleAdminMenu(c telebot.Context) error {
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
+		menu.Row(menu.Data("➕ Create Client", "admin_create_client")),
 		menu.Row(menu.Data("👥 Users", "admin_users"), menu.Data("📋 Plans", "admin_plans")),
 		menu.Row(menu.Data("⚙️ Settings", "admin_settings"), menu.Data("📊 Stats", "admin_stats")),
 		menu.Row(
