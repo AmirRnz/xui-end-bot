@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +22,37 @@ type Client struct {
 	apiToken            string
 	httpClient          *http.Client
 	Cache               *InboundCache
+}
+
+type WriteOutcome string
+
+const (
+	WriteSucceeded         WriteOutcome = "success"
+	WriteDefinitiveFailure WriteOutcome = "definitive_failure"
+	WriteUnknown           WriteOutcome = "unknown"
+)
+
+type WriteResult struct {
+	Outcome WriteOutcome
+	Err     error
+}
+
+type WriteError struct {
+	Outcome WriteOutcome
+	Err     error
+}
+
+func (e *WriteError) Error() string { return e.Err.Error() }
+func (e *WriteError) Unwrap() error { return e.Err }
+
+func IsUnknownOutcome(err error) bool {
+	var writeErr *WriteError
+	return errors.As(err, &writeErr) && writeErr.Outcome == WriteUnknown
+}
+
+func IsDefinitiveFailure(err error) bool {
+	var writeErr *WriteError
+	return errors.As(err, &writeErr) && writeErr.Outcome == WriteDefinitiveFailure
 }
 
 func NewClient(cfg *config.XUIConfig) (*Client, error) {
@@ -97,52 +128,96 @@ func (c *Client) GetCachedInbounds() []Inbound {
 }
 
 func (c *Client) AddClient(req AddClientRequest) error {
-	return c.doRequest("POST", "/panel/api/clients/add", req, nil)
+	return c.AddClientResult(req).Err
 }
 
 func (c *Client) UpdateClient(email string, client ClientConfig) error {
-	endpoint := "/panel/api/clients/update/" + pathEscape(email)
-	// Current 3x-ui accepts the raw client payload; older mocks in this repo
-	// expect {"client": ...}. doRequestWithFallback keeps both compatible.
-	err := c.doRequest("POST", endpoint, client, nil)
-	if err != nil {
-		var netErr net.Error
-		isTimeout := false
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			isTimeout = true
-		} else if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
-			isTimeout = true
-		}
+	return c.UpdateClientResult(email, client).Err
+}
 
-		if isTimeout {
-			log.Printf("XUI UpdateClient timed out (pending node sync) for %s, treating as success", email)
-			return nil
-		}
-
-		errRetry := c.doRequest("POST", endpoint, UpdateClientRequest{Client: client}, nil)
-		if errRetry != nil {
-			isTimeoutRetry := false
-			if errors.As(errRetry, &netErr) && netErr.Timeout() {
-				isTimeoutRetry = true
-			} else if errors.Is(errRetry, context.DeadlineExceeded) || strings.Contains(errRetry.Error(), "timeout") || strings.Contains(errRetry.Error(), "deadline exceeded") {
-				isTimeoutRetry = true
-			}
-			if isTimeoutRetry {
-				log.Printf("XUI UpdateClient retry timed out (pending node sync) for %s, treating as success", email)
-				return nil
-			}
-			return errRetry
-		}
+func (c *Client) AddClientResult(req AddClientRequest) WriteResult {
+	err := c.doRequest("POST", "/panel/api/clients/add", req, nil)
+	if err == nil {
+		return WriteResult{Outcome: WriteSucceeded}
 	}
-	return nil
+	if !isTimeoutError(err) {
+		return WriteResult{Outcome: WriteDefinitiveFailure, Err: &WriteError{Outcome: WriteDefinitiveFailure, Err: err}}
+	}
+	remote, verifyErr := c.GetClientByEmail(req.Client.Email)
+	if verifyErr == nil && remote != nil && remote.Email == req.Client.Email && remote.SubID == req.Client.SubID {
+		return WriteResult{Outcome: WriteSucceeded}
+	}
+	if verifyErr != nil {
+		err = fmt.Errorf("%w (verification: %v)", err, verifyErr)
+	}
+	return WriteResult{Outcome: WriteUnknown, Err: &WriteError{Outcome: WriteUnknown, Err: fmt.Errorf("x-ui add client outcome is unknown for %s: %w", req.Client.Email, err)}}
+}
+
+func (c *Client) UpdateClientResult(email string, client ClientConfig) WriteResult {
+	current, err := c.GetClientByEmail(email)
+	if err != nil {
+		outcome := WriteDefinitiveFailure
+		if isTimeoutError(err) {
+			outcome = WriteUnknown
+		}
+		return WriteResult{Outcome: outcome, Err: &WriteError{Outcome: outcome, Err: fmt.Errorf("cannot read current x-ui client %s: %w", email, err)}}
+	}
+	merged := mergeClientConfig(*current, client)
+	endpoint := "/panel/api/clients/update/" + pathEscape(email)
+	err = c.doRequest("POST", endpoint, merged, nil)
+	if err == nil {
+		return WriteResult{Outcome: WriteSucceeded}
+	}
+	if !isTimeoutError(err) {
+		return WriteResult{Outcome: WriteDefinitiveFailure, Err: &WriteError{Outcome: WriteDefinitiveFailure, Err: err}}
+	}
+	remote, verifyErr := c.GetClientByEmail(email)
+	if verifyErr == nil && remote != nil && remote.Email == merged.Email && remote.Enable == merged.Enable && remote.ExpiryTime == merged.ExpiryTime && remote.LimitIP == merged.LimitIP {
+		return WriteResult{Outcome: WriteSucceeded}
+	}
+	if verifyErr != nil {
+		err = fmt.Errorf("%w (verification: %v)", err, verifyErr)
+	}
+	return WriteResult{Outcome: WriteUnknown, Err: &WriteError{Outcome: WriteUnknown, Err: fmt.Errorf("x-ui update client outcome is unknown for %s: %w", email, err)}}
+}
+
+func isTimeoutError(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout() || errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "timeout") || strings.Contains(strings.ToLower(err.Error()), "deadline exceeded")
+}
+
+func wrapWriteError(err error) error {
+	if err == nil {
+		return nil
+	}
+	outcome := WriteDefinitiveFailure
+	if isTimeoutError(err) {
+		outcome = WriteUnknown
+	}
+	return &WriteError{Outcome: outcome, Err: err}
+}
+
+func mergeClientConfig(current XUIClientInfo, desired ClientConfig) ClientConfig {
+	merged := ClientConfig{ID: strconv.Itoa(current.ID), Email: current.Email, Enable: current.Enable, ExpiryTime: current.ExpiryTime, Flow: current.Flow, Group: current.Group, LimitIP: current.LimitIP, Reset: current.Reset, ResetDay: current.ResetDay, ResetMax: current.ResetMax, Security: current.Security, SubID: current.SubID, TgID: current.TgID, TotalGB: current.TotalGB, Comment: current.Comment, Password: current.Password, Auth: current.Auth, LimitHWID: current.LimitHWID, KeepAlive: current.KeepAlive, PrivateKey: current.PrivateKey, PublicKey: current.PublicKey, PreSharedKey: current.PreSharedKey, AllowedIPs: current.AllowedIPs, AllowedIPsByInbound: current.AllowedIPsByInbound, Secret: current.Secret, AdTag: current.AdTag, ForwardedPorts: current.ForwardedPorts, TrafficReset: current.TrafficReset, TrafficResetDay: current.TrafficResetDay, Reverse: current.Reverse}
+	merged.Email = desired.Email
+	merged.Enable = desired.Enable
+	merged.ExpiryTime = desired.ExpiryTime
+	merged.LimitIP = desired.LimitIP
+	merged.SubID = desired.SubID
+	merged.TgID = desired.TgID
+	merged.TotalGB = desired.TotalGB
+	if desired.Flow != "" {
+		merged.Flow = desired.Flow
+	}
+	return merged
 }
 
 func (c *Client) DeleteClient(email string) error {
-	return c.doRequest("POST", "/panel/api/clients/del/"+pathEscape(email)+"?keepTraffic=0", nil, nil)
+	return wrapWriteError(c.doRequest("POST", "/panel/api/clients/del/"+pathEscape(email)+"?keepTraffic=0", nil, nil))
 }
 
 func (c *Client) AttachClient(email string, inboundIDs []int) error {
-	return c.doRequest("POST", "/panel/api/clients/"+pathEscape(email)+"/attach", attachRequest{InboundIDs: inboundIDs}, nil)
+	return wrapWriteError(c.doRequest("POST", "/panel/api/clients/"+pathEscape(email)+"/attach", attachRequest{InboundIDs: inboundIDs}, nil))
 }
 
 func (c *Client) GetSubscriptionLinks(subID string) ([]string, error) {
@@ -299,11 +374,11 @@ type BulkAttachRequest struct {
 }
 
 func (c *Client) BulkAttach(req BulkAttachRequest) error {
-	return c.doRequest("POST", "/panel/api/clients/bulkAttach", req, nil)
+	return wrapWriteError(c.doRequest("POST", "/panel/api/clients/bulkAttach", req, nil))
 }
 
 func (c *Client) BulkDetach(req BulkAttachRequest) error {
-	return c.doRequest("POST", "/panel/api/clients/bulkDetach", req, nil)
+	return wrapWriteError(c.doRequest("POST", "/panel/api/clients/bulkDetach", req, nil))
 }
 
 type BulkCreateItem struct {
@@ -312,7 +387,7 @@ type BulkCreateItem struct {
 }
 
 type BulkCreateResponse struct {
-	Created int `json:"created"`
+	Created int                 `json:"created"`
 	Skipped []BulkCreateSkipped `json:"skipped"`
 }
 
@@ -324,7 +399,7 @@ type BulkCreateSkipped struct {
 func (c *Client) BulkCreate(req []BulkCreateItem) (*BulkCreateResponse, error) {
 	var resp BulkCreateResponse
 	if err := c.doRequest("POST", "/panel/api/clients/bulkCreate", req, &resp); err != nil {
-		return nil, err
+		return nil, wrapWriteError(err)
 	}
 	return &resp, nil
 }
@@ -337,4 +412,10 @@ func (c *Client) ListClients() ([]XUIClientInfo, error) {
 	return clients, nil
 }
 
-
+func (c *Client) GetClientByEmail(email string) (*XUIClientInfo, error) {
+	var client XUIClientInfo
+	if err := c.doRequest("GET", "/panel/api/clients/get/"+pathEscape(email), nil, &client); err != nil {
+		return nil, err
+	}
+	return &client, nil
+}

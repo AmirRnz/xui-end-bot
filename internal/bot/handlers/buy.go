@@ -476,14 +476,14 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 	}
 
 	bot.FSM.SetState(user.TelegramID, "awaiting_buy_confirm", map[string]interface{}{
-		"plan_id":      fmt.Sprintf("%d", plan.ID),
-		"months":       fmt.Sprintf("%d", months),
-		"ip_limit":     fmt.Sprintf("%d", ipLimit),
-		"price":        fmt.Sprintf("%.2f", price),
-		"custom_name":  name,
-		"email":        email,
-		"data_gb":      fmt.Sprintf("%d", dataGB),
-		"type":         "buy",
+		"plan_id":     fmt.Sprintf("%d", plan.ID),
+		"months":      fmt.Sprintf("%d", months),
+		"ip_limit":    fmt.Sprintf("%d", ipLimit),
+		"price":       fmt.Sprintf("%.2f", price),
+		"custom_name": name,
+		"email":       email,
+		"data_gb":     fmt.Sprintf("%d", dataGB),
+		"type":        "buy",
 	})
 
 	var dataLabel = "نامحدود"
@@ -561,14 +561,14 @@ func HandleBuyAutoName(c telebot.Context) error {
 	}
 
 	bot.FSM.SetState(user.TelegramID, "awaiting_buy_confirm", map[string]interface{}{
-		"plan_id":      fmt.Sprintf("%d", plan.ID),
-		"months":       fmt.Sprintf("%d", months),
-		"ip_limit":     fmt.Sprintf("%d", ipLimit),
-		"price":        fmt.Sprintf("%.2f", price),
-		"custom_name":  baseName,
-		"email":        email,
-		"data_gb":      fmt.Sprintf("%d", dataGB),
-		"type":         "buy",
+		"plan_id":     fmt.Sprintf("%d", plan.ID),
+		"months":      fmt.Sprintf("%d", months),
+		"ip_limit":    fmt.Sprintf("%d", ipLimit),
+		"price":       fmt.Sprintf("%.2f", price),
+		"custom_name": baseName,
+		"email":       email,
+		"data_gb":     fmt.Sprintf("%d", dataGB),
+		"type":        "buy",
 	})
 
 	var dataLabel = "نامحدود"
@@ -709,7 +709,7 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 	client := prepareClientConfig(email, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, ipLimit, plan.Flow, subID, clientUUID, plan.Name, user)
 
 	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
-	if err != nil {
+	if err != nil && !xui.IsUnknownOutcome(err) {
 		log.Printf("XUI AddClient failed: %v. Refreshing cache and retrying...", err)
 		if bot.XUIClient.Cache != nil {
 			bot.XUIClient.Cache.RefreshSync()
@@ -789,8 +789,7 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 	}
 
 	if err := sendSubscriptionResult(c, subLink, detailsMsg); err != nil {
-		_ = c.Send(detailsMsg + "\n`" + subLink + "`", telebot.ModeMarkdown)
+		_ = c.Send(detailsMsg+"\n`"+subLink+"`", telebot.ModeMarkdown)
 	}
 	return showMainMenu(c, user)
 }
-

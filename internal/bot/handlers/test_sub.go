@@ -51,7 +51,7 @@ func HandleTestSubFlow(c telebot.Context) error {
 	resetDays := getTestResetDays()
 	for _, plan := range plans {
 		updatedAt, exists, _ := db.GetTestUsage(context.Background(), user.ID, plan.ID)
-		
+
 		canClaim := true
 		var nextAvailable time.Time
 		if exists && resetDays > 0 {
@@ -204,7 +204,7 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	}
 
 	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
-	if err != nil {
+	if err != nil && !xui.IsUnknownOutcome(err) {
 		log.Printf("XUI AddClient failed: %v. Refreshing cache and retrying...", err)
 		if bot.XUIClient.Cache != nil {
 			bot.XUIClient.Cache.RefreshSync()
@@ -270,7 +270,7 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	}
 
 	if err := sendSubscriptionResult(c, subLink, detailsMsg); err != nil {
-		_ = c.Send(detailsMsg + "\n`" + subLink + "`", telebot.ModeMarkdown)
+		_ = c.Send(detailsMsg+"\n`"+subLink+"`", telebot.ModeMarkdown)
 	}
 	return nil
 }
@@ -296,4 +296,3 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
-

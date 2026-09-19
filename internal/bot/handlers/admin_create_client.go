@@ -778,7 +778,7 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 		clientConfig := prepareClientConfig(email, serviceGroup(adminUser), targetUser.TelegramID, totalBytes, expireMilli, ipLimit, flow, subID, clientUUID, planName, adminUser)
 
 		err = bot.XUIClient.AddClient(xui.AddClientRequest{Client: clientConfig, InboundIDs: inboundIDs})
-		if err != nil {
+		if err != nil && !xui.IsUnknownOutcome(err) {
 			log.Printf("XUI AddClient failed for %s: %v. Retrying with refreshed cache...", email, err)
 			if bot.XUIClient.Cache != nil {
 				bot.XUIClient.Cache.RefreshSync()
