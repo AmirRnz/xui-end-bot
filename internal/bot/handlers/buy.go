@@ -804,7 +804,7 @@ func HandleBuyCancel(c telebot.Context) error {
 	return maybeEditOrSend(c, "❌ فرآیند خرید لغو شد.")
 }
 
-func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan, email, displayName string, months int, ipLimit int, price float64, dataGB int) error {
+func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan, email, displayName string, months int, ipLimit int, price float64, dataGB int, operationKey string) error {
 	if bot.XUIClient == nil {
 		return fmt.Errorf("x-ui client is not initialized")
 	}
@@ -860,19 +860,35 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 		TrafficLimitBytes: totalBytes,
 	}
 	if err := db.CreateSubscription(context.Background(), sub); err != nil {
-		log.Printf("[CRITICAL] Database save failed for subscription %s: %v. Rolling back panel client.", email, err)
-		go func() {
-			var deleteErr error
-			for i := 0; i < 5; i++ {
-				if deleteErr = bot.XUIClient.DeleteClient(email); deleteErr == nil {
-					log.Printf("Rollback successful: Deleted client %s from panel", email)
-					return
-				}
-				time.Sleep(time.Duration(1<<i) * time.Second)
+		log.Printf("[CRITICAL] Database save failed for subscription %s: %v. Initiating safe compensation...", email, err)
+		deleteFn := func(e string) error {
+			if bot.XUIClient == nil {
+				return ErrXUIClientUnavailable
 			}
-			log.Printf("[ALERT] CRITICAL: Failed to delete client %s from panel after 5 retries: %v. Client is orphaned on panel!", email, deleteErr)
-		}()
-		return err
+			return bot.XUIClient.DeleteClient(e)
+		}
+		verifyFn := func(e string) (*xui.XUIClientInfo, error) {
+			if bot.XUIClient == nil {
+				return nil, ErrXUIClientUnavailable
+			}
+			return bot.XUIClient.GetClientByEmail(e)
+		}
+		compResult := compensateRemoteCreateDbFailure(
+			context.Background(),
+			user,
+			plan,
+			client,
+			inboundIDs,
+			displayName,
+			price,
+			operationKey,
+			err,
+			deleteFn,
+			verifyFn,
+			safeRefundWallet,
+			db.CreateReconciliationRecord,
+		)
+		return &paidSubscriptionCompensationError{Result: compResult}
 	}
 
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
