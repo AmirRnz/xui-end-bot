@@ -529,9 +529,14 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 			return c.Send("نتیجه ارتقای پنل نامشخص است؛ مبلغ بازگردانده نشد و سرویس برای تطبیق ثبت شد.")
 		}
 		if walletRemoteRefundAllowed(err) {
-			_ = db.CreditWalletBalanceWithKey(context.Background(), user.ID, cost, "refund failed IP upgrade", operationKey+":refund")
+			subID64 := int64(sub.ID)
+			refunded, refErr := safeRefundWallet(context.Background(), user.ID, cost, "refund failed IP upgrade", operationKey, operationKey+":refund", &subID64, map[string]any{"subscription_id": sub.ID, "target_limit": newLimit})
+			if refunded {
+				return c.Send("خطا در بروزرسانی پنل. مبلغ ارتقا به کیف پول شما برگشت داده شد.")
+			}
+			return c.Send(fmt.Sprintf("خطا در بروزرسانی پنل رخ داد، اما بازگشت خودکار وجه به کیف پول نیز با خطا مواجه شد (%v). عملیات با شناسه پیگیری %s جهت بررسی و تطبیق ثبت گردید.", refErr, operationKey+":refund"))
 		}
-		return c.Send("خطا در بروزرسانی پنل. مبلغ ارتقا به کیف پول شما برگشت داده شد.")
+		return c.Send("خطا در بروزرسانی پنل.")
 	}
 	if err := db.UpdateSubscription(context.Background(), sub); err != nil {
 		desiredActive := sub.IsActive
@@ -864,9 +869,14 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 			return c.Send("نتیجه تمدید در پنل نامشخص است؛ مبلغ بازگردانده نشد و وضعیت برای تطبیق ثبت شد.")
 		}
 		if walletRemoteRefundAllowed(err) {
-			_ = db.CreditWalletBalanceWithKey(context.Background(), user.ID, cost, "refund failed extension", operationKey+":refund")
+			subID64 := int64(sub.ID)
+			refunded, refErr := safeRefundWallet(context.Background(), user.ID, cost, "refund failed extension", operationKey, operationKey+":refund", &subID64, map[string]any{"subscription_id": sub.ID, "months": months})
+			if refunded {
+				return c.Send("خطا در بروزرسانی پنل. مبلغ تمدید به کیف پول شما بازگردانده شد.")
+			}
+			return c.Send(fmt.Sprintf("خطا در بروزرسانی پنل رخ داد، اما بازگشت خودکار وجه به کیف پول نیز با خطا مواجه شد (%v). عملیات با شناسه پیگیری %s جهت بررسی و تطبیق ثبت گردید.", refErr, operationKey+":refund"))
 		}
-		return c.Send("خطا در بروزرسانی پنل. مبلغ تمدید به کیف پول شما بازگردانده شد.")
+		return c.Send("خطا در بروزرسانی پنل.")
 	}
 	if err := db.UpdateSubscription(context.Background(), sub); err != nil {
 		restoreSubscriptionWalletState(sub, oldState)
@@ -1014,7 +1024,7 @@ func paidPlanForSub(sub *db.Subscription) (*db.PaidPlan, error) {
 
 func updateXUIFromSubscription(sub *db.Subscription) error {
 	if bot.XUIClient == nil {
-		return nil
+		return ErrXUIClientUnavailable
 	}
 	client := clientConfigFromSubscription(sub, sub.ClientEmail)
 	client.Enable = sub.IsActive
@@ -1023,7 +1033,7 @@ func updateXUIFromSubscription(sub *db.Subscription) error {
 
 func updateXUIRename(oldEmail string, sub *db.Subscription) error {
 	if bot.XUIClient == nil {
-		return nil
+		return ErrXUIClientUnavailable
 	}
 	client := clientConfigFromSubscription(sub, sub.ClientEmail)
 	client.Enable = sub.IsActive

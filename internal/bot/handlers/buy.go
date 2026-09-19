@@ -666,7 +666,20 @@ func HandleBuyConfirm(c telebot.Context) error {
 		return c.Send("موجودی کیف پول شما کافی نیست. لطفا ابتدا کیف پول خود را شارژ کنید یا از گزینه پرداخت مستقیم استفاده کنید.")
 	}
 
-	if err := createPaidSubscription(c, user, plan, email, name, months, ipLimit, price, dataGB); err != nil {
+	if err := createPaidSubscription(c, user, plan, email, name, months, ipLimit, price, dataGB, operationKey); err != nil {
+		var compErr *paidSubscriptionCompensationError
+		if errors.As(err, &compErr) {
+			switch compErr.Result.Outcome {
+			case CompensationRefunded:
+				return c.Send("خطا در ثبت نهایی اشتراک در دیتابیس رخ داد. سرویس ایجاد شده در پنل خنثی شد و مبلغ پرداختی به کیف پول شما عودت داده شد.")
+			case CompensationReconciliationRequired:
+				return c.Send("خطا در ثبت نهایی اشتراک رخ داد و وضعیت حذف سرویس از پنل نامشخص است؛ جهت حفظ حقوق شما، مبلغ در کیف پول محفوظ ماند و درخواست برای بررسی پشتیبانی ثبت شد.")
+			case CompensationClientStillPresent:
+				return c.Send("سرویس در پنل فعال شد اما ثبت آن در سیستم با خطا مواجه گردید. سرویس در سرور فعال باقی مانده و هزینه کسر شده برای بررسی و تطبیق توسط پشتیبانی ثبت شد.")
+			default:
+				return c.Send("خطا در پردازش اشتراک. وضعیت جهت بررسی ثبت شد.")
+			}
+		}
 		if xui.IsUnknownOutcome(err) {
 			userID := user.ID
 			var unknownCreate *paidSubscriptionCreateUnknownError
@@ -699,8 +712,11 @@ func HandleBuyConfirm(c telebot.Context) error {
 			}
 			return c.Send("نتیجه ایجاد سرویس در پنل نامشخص است؛ برای جلوگیری از ایجاد سرویس تکراری، مبلغ فعلا در کیف پول محفوظ ماند و درخواست برای بررسی ثبت شد.")
 		}
-		_ = db.CreditWalletBalanceWithKey(context.Background(), user.ID, price, "refund for failed purchase: "+email, operationKey+":refund")
-		return c.Send("خطا در ایجاد اشتراک در پنل. مبلغ کسر شده به کیف پول شما عودت داده شد. " + err.Error())
+		refunded, refErr := safeRefundWallet(context.Background(), user.ID, price, "refund for failed purchase: "+email, operationKey, operationKey+":refund", nil, map[string]any{"email": email, "plan_id": plan.ID})
+		if refunded {
+			return c.Send("خطا در ایجاد اشتراک در پنل. مبلغ کسر شده به کیف پول شما عودت داده شد. " + err.Error())
+		}
+		return c.Send(fmt.Sprintf("خطا در ایجاد اشتراک در پنل رخ داد (%v)، اما بازگشت خودکار وجه به کیف پول نیز با خطا مواجه شد (%v). مبلغ جهت بررسی و بازگشت دستی توسط پشتیبانی با شناسه %s ثبت شد.", err, refErr, operationKey+":refund"))
 	}
 	return nil
 }

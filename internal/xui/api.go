@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 func (c *Client) doRequest(method, endpoint string, body any, responseObj any) error {
@@ -66,6 +67,9 @@ func (c *Client) doRequest(method, endpoint string, body any, responseObj any) e
 		if apiResp.Msg == "" {
 			apiResp.Msg = "unknown x-ui API error"
 		}
+		if isNotFoundMessage(apiResp.Msg) {
+			return &NotFoundError{Message: apiResp.Msg}
+		}
 		return fmt.Errorf("API error: %s", apiResp.Msg)
 	}
 
@@ -76,6 +80,11 @@ func (c *Client) doRequest(method, endpoint string, body any, responseObj any) e
 	}
 
 	return nil
+}
+
+func isNotFoundMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	return strings.Contains(message, "not found") || strings.Contains(message, "does not exist")
 }
 
 func pathEscape(s string) string {

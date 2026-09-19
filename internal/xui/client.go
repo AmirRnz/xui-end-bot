@@ -42,6 +42,29 @@ type WriteError struct {
 	Err     error
 }
 
+// ErrNotFound is returned when the panel has confirmed that a client does
+// not exist.  Callers must use IsNotFound instead of matching human-readable
+// error strings because panel versions/locales vary their messages.
+var ErrNotFound = errors.New("x-ui resource not found")
+
+type NotFoundError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *NotFoundError) Error() string {
+	if e.Message == "" {
+		return ErrNotFound.Error()
+	}
+	return e.Message
+}
+
+func (e *NotFoundError) Unwrap() error { return ErrNotFound }
+
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
+
 func (e *WriteError) Error() string { return e.Err.Error() }
 func (e *WriteError) Unwrap() error { return e.Err }
 
