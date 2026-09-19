@@ -126,6 +126,22 @@ func makeSubID() string {
 	return randomToken(16)
 }
 
+// newOperationKey creates an identifier for one concrete confirmation intent.
+// It must be generated when the confirmation screen is shown; semantic keys
+// based only on a subscription and amount would incorrectly block a later,
+// legitimate repeat operation.
+func newOperationKey(prefix string) string {
+	return prefix + ":" + newOperationToken()
+}
+
+func newOperationToken() string {
+	return randomToken(16)
+}
+
+func operationKeyFromToken(prefix, token string) string {
+	return prefix + ":" + token
+}
+
 func makeClientUUID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -550,4 +566,3 @@ func parseDeviceLimitFromXUI(client xui.XUIClientInfo) (int, bool) {
 	}
 	return 0, false
 }
-

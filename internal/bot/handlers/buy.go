@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -475,15 +476,18 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 		currency = "IRR"
 	}
 
+	operationToken := newOperationToken()
 	bot.FSM.SetState(user.TelegramID, "awaiting_buy_confirm", map[string]interface{}{
-		"plan_id":     fmt.Sprintf("%d", plan.ID),
-		"months":      fmt.Sprintf("%d", months),
-		"ip_limit":    fmt.Sprintf("%d", ipLimit),
-		"price":       fmt.Sprintf("%.2f", price),
-		"custom_name": name,
-		"email":       email,
-		"data_gb":     fmt.Sprintf("%d", dataGB),
-		"type":        "buy",
+		"plan_id":         fmt.Sprintf("%d", plan.ID),
+		"months":          fmt.Sprintf("%d", months),
+		"ip_limit":        fmt.Sprintf("%d", ipLimit),
+		"price":           fmt.Sprintf("%.2f", price),
+		"custom_name":     name,
+		"email":           email,
+		"data_gb":         fmt.Sprintf("%d", dataGB),
+		"type":            "buy",
+		"operation_key":   operationKeyFromToken("wallet_purchase", operationToken),
+		"operation_token": operationToken,
 	})
 
 	var dataLabel = "نامحدود"
@@ -494,8 +498,8 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
 		menu.Row(
-			menu.Data("👛 پرداخت از کیف پول", "buy_confirm"),
-			menu.Data("💳 پرداخت مستقیم (کارت به کارت)", "buy_direct"),
+			menu.Data("👛 پرداخت از کیف پول", "buy_confirm", operationToken),
+			menu.Data("💳 پرداخت مستقیم (کارت به کارت)", "buy_direct", operationToken),
 		),
 		menu.Row(
 			menu.Data("❌ انصراف", "buy_cancel"),
@@ -560,15 +564,18 @@ func HandleBuyAutoName(c telebot.Context) error {
 		currency = "IRR"
 	}
 
+	operationToken := newOperationToken()
 	bot.FSM.SetState(user.TelegramID, "awaiting_buy_confirm", map[string]interface{}{
-		"plan_id":     fmt.Sprintf("%d", plan.ID),
-		"months":      fmt.Sprintf("%d", months),
-		"ip_limit":    fmt.Sprintf("%d", ipLimit),
-		"price":       fmt.Sprintf("%.2f", price),
-		"custom_name": baseName,
-		"email":       email,
-		"data_gb":     fmt.Sprintf("%d", dataGB),
-		"type":        "buy",
+		"plan_id":         fmt.Sprintf("%d", plan.ID),
+		"months":          fmt.Sprintf("%d", months),
+		"ip_limit":        fmt.Sprintf("%d", ipLimit),
+		"price":           fmt.Sprintf("%.2f", price),
+		"custom_name":     baseName,
+		"email":           email,
+		"data_gb":         fmt.Sprintf("%d", dataGB),
+		"type":            "buy",
+		"operation_key":   operationKeyFromToken("wallet_purchase", operationToken),
+		"operation_token": operationToken,
 	})
 
 	var dataLabel = "نامحدود"
@@ -579,8 +586,8 @@ func HandleBuyAutoName(c telebot.Context) error {
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
 		menu.Row(
-			menu.Data("👛 پرداخت از کیف پول", "buy_confirm"),
-			menu.Data("💳 پرداخت مستقیم (کارت به کارت)", "buy_direct"),
+			menu.Data("👛 پرداخت از کیف پول", "buy_confirm", operationToken),
+			menu.Data("💳 پرداخت مستقیم (کارت به کارت)", "buy_direct", operationToken),
 		),
 		menu.Row(
 			menu.Data("❌ انصراف", "buy_cancel"),
@@ -606,6 +613,17 @@ func HandleBuyConfirm(c telebot.Context) error {
 	if state == nil || state.Step != "awaiting_buy_confirm" {
 		return c.Send("هیچ خریدی در انتظار تایید نیست.")
 	}
+	callbackToken := strings.TrimSpace(callbackPayload(c))
+	stateToken := fmt.Sprintf("%v", state.Data["operation_token"])
+	if stateToken != "" && callbackToken == "" {
+		return c.Send("این تایید فاقد شناسه عملیات است. لطفا فاکتور جدید را باز کنید.")
+	}
+	if callbackToken != "" && stateToken != "" && callbackToken != stateToken {
+		return c.Send("این تایید مربوط به یک خرید قدیمی است. لطفا فاکتور جدید را باز کنید.")
+	}
+	if stateToken == "" {
+		stateToken = callbackToken
+	}
 
 	planID, _ := parseInt64(fmt.Sprintf("%v", state.Data["plan_id"]))
 	months, _ := strconv.Atoi(fmt.Sprintf("%v", state.Data["months"]))
@@ -615,6 +633,17 @@ func HandleBuyConfirm(c telebot.Context) error {
 	var dataGB int
 	if val, ok := state.Data["data_gb"]; ok && val != "" {
 		dataGB, _ = strconv.Atoi(fmt.Sprintf("%v", val))
+	}
+	operationKey := fmt.Sprintf("%v", state.Data["operation_key"])
+	if stateToken != "" {
+		operationKey = operationKeyFromToken("wallet_purchase", stateToken)
+	}
+	if operationKey == "" {
+		// Preserve compatibility with an older in-memory state created before
+		// operation IDs were introduced. A replay of this state still receives
+		// one durable key, and subsequent callbacks use that same state value.
+		operationKey = newOperationKey("wallet_purchase")
+		state.Data["operation_key"] = operationKey
 	}
 
 	if !bot.FSM.CompareAndClearState(user.TelegramID, "awaiting_buy_confirm") {
@@ -630,15 +659,73 @@ func HandleBuyConfirm(c telebot.Context) error {
 	}
 
 	price := calculatePaidPrice(plan, months, ipLimit, dataGB)
-	if err := db.DebitWalletBalance(context.Background(), user.ID, price, "subscription purchase: "+email); err != nil {
+	if err := db.DebitWalletBalanceWithKey(context.Background(), user.ID, price, "subscription purchase: "+email, operationKey); err != nil {
+		if errors.Is(err, db.ErrWalletOperationAlreadyApplied) {
+			return c.Send("این خرید قبلا پردازش شده یا در وضعیت تطبیق قرار دارد.")
+		}
 		return c.Send("موجودی کیف پول شما کافی نیست. لطفا ابتدا کیف پول خود را شارژ کنید یا از گزینه پرداخت مستقیم استفاده کنید.")
 	}
 
 	if err := createPaidSubscription(c, user, plan, email, name, months, ipLimit, price, dataGB); err != nil {
-		_ = db.CreditWalletBalance(context.Background(), user.ID, price, "refund for failed purchase: "+email)
+		if xui.IsUnknownOutcome(err) {
+			userID := user.ID
+			var unknownCreate *paidSubscriptionCreateUnknownError
+			desired := map[string]any{
+				"email": email, "display_name": name, "months": months,
+				"ip_limit": ipLimit, "data_gb": dataGB, "plan_id": plan.ID,
+				"operation_key": operationKey,
+			}
+			if errors.As(err, &unknownCreate) {
+				desired["client"] = unknownCreate.Request.Client
+				desired["inbound_ids"] = unknownCreate.Request.InboundIDs
+				desired["client_id"] = unknownCreate.Request.Client.ID
+				desired["client_uuid"] = unknownCreate.Request.Client.ID
+				desired["sub_id"] = unknownCreate.Request.Client.SubID
+				desired["enable"] = unknownCreate.Request.Client.Enable
+				desired["expiry_time"] = unknownCreate.Request.Client.ExpiryTime
+				desired["limit_ip"] = unknownCreate.Request.Client.LimitIP
+				desired["total_gb"] = unknownCreate.Request.Client.TotalGB
+			}
+			record := &db.ReconciliationRecord{
+				OperationKey:  operationKey + ":provisioning",
+				Kind:          "purchase_provisioning_unknown",
+				UserID:        &userID,
+				DesiredState:  desired,
+				ObservedState: map[string]any{"outcome": "unknown"},
+				ErrorMessage:  err.Error(),
+			}
+			if recErr := db.CreateReconciliationRecord(context.Background(), record); recErr != nil {
+				log.Printf("[CRITICAL] failed to persist purchase reconciliation for %s: %v", email, recErr)
+			}
+			return c.Send("نتیجه ایجاد سرویس در پنل نامشخص است؛ برای جلوگیری از ایجاد سرویس تکراری، مبلغ فعلا در کیف پول محفوظ ماند و درخواست برای بررسی ثبت شد.")
+		}
+		_ = db.CreditWalletBalanceWithKey(context.Background(), user.ID, price, "refund for failed purchase: "+email, operationKey+":refund")
 		return c.Send("خطا در ایجاد اشتراک در پنل. مبلغ کسر شده به کیف پول شما عودت داده شد. " + err.Error())
 	}
 	return nil
+}
+
+// paidSubscriptionCreateUnknownError carries the exact non-idempotent create
+// request that may have reached 3x-ui.  A reconciliation worker needs this
+// identity and desired state; the caller must never reconstruct it from only
+// the customer's email and plan after an ambiguous response.
+type paidSubscriptionCreateUnknownError struct {
+	cause   error
+	Request xui.AddClientRequest
+}
+
+func (e *paidSubscriptionCreateUnknownError) Error() string {
+	if e == nil || e.cause == nil {
+		return "x-ui paid subscription create outcome is unknown"
+	}
+	return e.cause.Error()
+}
+
+func (e *paidSubscriptionCreateUnknownError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
 }
 
 func HandleBuyDirectPayment(c telebot.Context) error {
@@ -650,6 +737,14 @@ func HandleBuyDirectPayment(c telebot.Context) error {
 	state := bot.FSM.GetState(user.TelegramID)
 	if state == nil || state.Step != "awaiting_buy_confirm" {
 		return c.Send("هیچ خریدی در انتظار تایید یافت نشد.")
+	}
+	callbackToken := strings.TrimSpace(callbackPayload(c))
+	stateToken := fmt.Sprintf("%v", state.Data["operation_token"])
+	if stateToken != "" && callbackToken == "" {
+		return c.Send("این پرداخت فاقد شناسه عملیات است. لطفا فاکتور جدید را باز کنید.")
+	}
+	if callbackToken != "" && stateToken != "" && callbackToken != stateToken {
+		return c.Send("این پرداخت مربوط به یک فاکتور قدیمی است. لطفا فاکتور جدید را باز کنید.")
 	}
 
 	priceStr := fmt.Sprintf("%v", state.Data["price"])
@@ -708,7 +803,8 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 	clientUUID := makeClientUUID()
 	client := prepareClientConfig(email, serviceGroup(user), user.TelegramID, totalBytes, expireMilli, ipLimit, plan.Flow, subID, clientUUID, plan.Name, user)
 
-	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
+	request := xui.AddClientRequest{Client: client, InboundIDs: inboundIDs}
+	err := bot.XUIClient.AddClient(request)
 	if err != nil && !xui.IsUnknownOutcome(err) {
 		log.Printf("XUI AddClient failed: %v. Refreshing cache and retrying...", err)
 		if bot.XUIClient.Cache != nil {
@@ -718,11 +814,15 @@ func createPaidSubscription(c telebot.Context, user *db.User, plan *db.PaidPlan,
 				if len(newInboundIDs) == 0 {
 					return fmt.Errorf("این طرح پس از بروزرسانی هیچ کانکشن معتبری ندارد")
 				}
-				err = bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: newInboundIDs})
+				request.InboundIDs = newInboundIDs
+				err = bot.XUIClient.AddClient(request)
 			}
 		}
 	}
 	if err != nil {
+		if xui.IsUnknownOutcome(err) {
+			return &paidSubscriptionCreateUnknownError{cause: err, Request: request}
+		}
 		return err
 	}
 

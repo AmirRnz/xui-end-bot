@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -465,8 +466,8 @@ func TestPurchaseRollbackAndClaim(t *testing.T) {
 	if approvedReq == nil {
 		t.Fatalf("approved request is nil")
 	}
-	if approvedReq.Status != "approved" {
-		t.Fatalf("expected status 'approved', got %q", approvedReq.Status)
+	if approvedReq.Status != "approved" || approvedReq.ProvisioningStatus != PurchaseProvisioningPending {
+		t.Fatalf("expected payment approved and provisioning pending, got status=%q provisioning=%q", approvedReq.Status, approvedReq.ProvisioningStatus)
 	}
 
 	// Verify transaction was created
@@ -478,6 +479,14 @@ func TestPurchaseRollbackAndClaim(t *testing.T) {
 	if txCount != 1 {
 		t.Fatalf("expected 1 transaction, got %d", txCount)
 	}
+	var operationKey string
+	err = Pool.QueryRow(ctx, "SELECT operation_key FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", req.ID).Scan(&operationKey)
+	if err != nil {
+		t.Fatalf("failed to read purchase approval operation key: %v", err)
+	}
+	if expected := "purchase_approval:" + strconv.FormatInt(req.ID, 10); operationKey != expected {
+		t.Fatalf("expected purchase approval operation key %q, got %q", expected, operationKey)
+	}
 
 	// Verify HasPendingClaimRequest is now false since status is no longer 'pending'
 	hasPending, err = HasPendingClaimRequest(ctx, "sub_claim_123")
@@ -488,37 +497,155 @@ func TestPurchaseRollbackAndClaim(t *testing.T) {
 		t.Fatalf("expected HasPendingClaimRequest to be false after approval, got true")
 	}
 
-	// 3. Rollback the purchase request
+	// 3. Record a provisioning failure/retry state. This must not undo the
+	// approved payment or delete its durable transaction.
 	err = RollbackPurchaseRequest(ctx, req.ID)
 	if err != nil {
 		t.Fatalf("failed to rollback purchase request: %v", err)
 	}
 
-	// Verify request is pending again
+	// Verify payment approval remains intact while provisioning is retryable.
 	rolledReq, err := GetPurchaseRequestByID(ctx, req.ID)
 	if err != nil {
 		t.Fatalf("failed to get purchase request: %v", err)
 	}
-	if rolledReq.Status != "pending" || rolledReq.AdminID != nil {
-		t.Fatalf("expected status 'pending' and nil AdminID, got status %q, AdminID %v", rolledReq.Status, rolledReq.AdminID)
+	if rolledReq.Status != "approved" || rolledReq.ProvisioningStatus != PurchaseProvisioningRetryable || rolledReq.AdminID == nil {
+		t.Fatalf("expected approved payment and retryable provisioning, got status %q provisioning %q AdminID %v", rolledReq.Status, rolledReq.ProvisioningStatus, rolledReq.AdminID)
 	}
 
-	// Verify transaction was deleted
+	// Verify the original financial transaction remains intact.
 	err = Pool.QueryRow(ctx, "SELECT count(*) FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", req.ID).Scan(&txCount)
 	if err != nil {
 		t.Fatalf("failed to count transactions after rollback: %v", err)
 	}
-	if txCount != 0 {
-		t.Fatalf("expected 0 transactions after rollback, got %d", txCount)
+	if txCount != 1 {
+		t.Fatalf("expected 1 transaction after provisioning failure, got %d", txCount)
 	}
 
-	// Verify HasPendingClaimRequest is true again
+	// The request remains approved, so it is no longer pending.
 	hasPending, err = HasPendingClaimRequest(ctx, "sub_claim_123")
 	if err != nil {
 		t.Fatalf("failed to check pending claim: %v", err)
 	}
-	if !hasPending {
-		t.Fatalf("expected HasPendingClaimRequest to be true after rollback, got false")
+	if hasPending {
+		t.Fatalf("expected HasPendingClaimRequest to remain false after provisioning failure")
 	}
 }
 
+func TestApproveTopupIsDurableAndReplaySafe(t *testing.T) {
+	ctx := setupTestDB(t)
+	const telegramID int64 = 999999996
+	defer func() {
+		if Pool != nil {
+			_, _ = Pool.Exec(ctx, "DELETE FROM transactions WHERE reference_type = 'topup_request' AND reference_id IN (SELECT id FROM topup_requests WHERE user_id IN (SELECT id FROM bot_users WHERE telegram_id = $1))", telegramID)
+			_, _ = Pool.Exec(ctx, "DELETE FROM topup_requests WHERE user_id IN (SELECT id FROM bot_users WHERE telegram_id = $1)", telegramID)
+			_, _ = Pool.Exec(ctx, "DELETE FROM bot_users WHERE telegram_id = $1", telegramID)
+		}
+	}()
+
+	var userID int64
+	if err := Pool.QueryRow(ctx, `
+		INSERT INTO bot_users (telegram_id, username, first_name, wallet_balance)
+		VALUES ($1, 'topup_operation_test', 'Topup', 0)
+		RETURNING id
+	`, telegramID).Scan(&userID); err != nil {
+		t.Fatalf("failed to create top-up test user: %v", err)
+	}
+
+	req := &TopupRequest{UserID: userID, TelegramFileID: "topup-operation-test", Status: "pending"}
+	if err := CreateTopupRequest(ctx, req); err != nil {
+		t.Fatalf("failed to create top-up request: %v", err)
+	}
+	approved, err := ApproveTopupRequest(ctx, req.ID, 999999996, 250)
+	if err != nil || approved == nil {
+		t.Fatalf("failed to approve top-up request: approved=%#v err=%v", approved, err)
+	}
+
+	var operationKey string
+	if err := Pool.QueryRow(ctx, "SELECT operation_key FROM transactions WHERE reference_type = 'topup_request' AND reference_id = $1", req.ID).Scan(&operationKey); err != nil {
+		t.Fatalf("failed to read top-up approval operation key: %v", err)
+	}
+	if expected := "topup_approval:" + strconv.FormatInt(req.ID, 10); operationKey != expected {
+		t.Fatalf("expected top-up approval operation key %q, got %q", expected, operationKey)
+	}
+
+	// The pending guard rejects a replay before any balance or transaction
+	// mutation. The operation key remains the durable audit identifier.
+	if _, err := ApproveTopupRequest(ctx, req.ID, 999999996, 250); err == nil {
+		t.Fatal("expected replayed top-up approval to be rejected")
+	}
+	var balance int64
+	if err := Pool.QueryRow(ctx, "SELECT wallet_balance FROM bot_users WHERE id = $1", userID).Scan(&balance); err != nil {
+		t.Fatalf("failed to read wallet balance: %v", err)
+	}
+	if balance != 250 {
+		t.Fatalf("expected exactly one top-up credit, got balance %d", balance)
+	}
+	var transactionCount int
+	if err := Pool.QueryRow(ctx, "SELECT count(*) FROM transactions WHERE operation_key = $1", operationKey).Scan(&transactionCount); err != nil {
+		t.Fatalf("failed to count top-up approval transactions: %v", err)
+	}
+	if transactionCount != 1 {
+		t.Fatalf("expected exactly one top-up approval transaction, got %d", transactionCount)
+	}
+}
+
+func TestPurchaseRequestIntentKeyIsPersistedAndUsedForApproval(t *testing.T) {
+	ctx := setupTestDB(t)
+	const telegramID int64 = 999999995
+	const operationKey = "direct_purchase_intent:test-receipt-1"
+	defer func() {
+		if Pool != nil {
+			_, _ = Pool.Exec(ctx, "DELETE FROM transactions WHERE operation_key = $1", operationKey)
+			_, _ = Pool.Exec(ctx, "DELETE FROM purchase_requests WHERE operation_key = $1", operationKey)
+			_, _ = Pool.Exec(ctx, "DELETE FROM bot_users WHERE telegram_id = $1", telegramID)
+		}
+	}()
+
+	var userID int64
+	if err := Pool.QueryRow(ctx, `
+		INSERT INTO bot_users (telegram_id, username, first_name, wallet_balance)
+		VALUES ($1, 'purchase_intent_test', 'Purchase', 0)
+		RETURNING id
+	`, telegramID).Scan(&userID); err != nil {
+		t.Fatalf("failed to create purchase intent test user: %v", err)
+	}
+
+	req := &PurchaseRequest{
+		UserID:         userID,
+		Type:           "buy",
+		Price:          321,
+		Months:         1,
+		IPLimit:        1,
+		DataGB:         10,
+		ClientEmail:    "purchase-intent@example.com",
+		TelegramFileID: "purchase-intent-test",
+		Status:         "pending",
+		OperationKey:   operationKey,
+	}
+	if err := CreatePurchaseRequest(ctx, req); err != nil {
+		t.Fatalf("failed to create purchase request: %v", err)
+	}
+	loaded, err := GetPurchaseRequestByID(ctx, req.ID)
+	if err != nil || loaded == nil || loaded.OperationKey != operationKey {
+		t.Fatalf("purchase intent key was not persisted: loaded=%#v err=%v", loaded, err)
+	}
+
+	duplicate := *req
+	duplicate.ID = 0
+	if err := CreatePurchaseRequest(ctx, &duplicate); err == nil {
+		t.Fatal("expected the same confirmation intent to be rejected by the unique key")
+	}
+
+	approved, err := ApprovePurchaseRequest(ctx, req.ID, 999999995)
+	if err != nil || approved == nil {
+		t.Fatalf("failed to approve purchase request: approved=%#v err=%v", approved, err)
+	}
+	var transactionKey string
+	if err := Pool.QueryRow(ctx, "SELECT operation_key FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", req.ID).Scan(&transactionKey); err != nil {
+		t.Fatalf("failed to read purchase transaction key: %v", err)
+	}
+	if transactionKey != operationKey {
+		t.Fatalf("expected approval transaction key %q, got %q", operationKey, transactionKey)
+	}
+}

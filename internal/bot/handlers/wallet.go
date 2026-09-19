@@ -163,6 +163,10 @@ func HandleReceiptPhoto(c telebot.Context) error {
 		if em, ok := state.Data["email"]; ok {
 			email = fmt.Sprintf("%v", em)
 		}
+		operationKey := ""
+		if op, ok := state.Data["operation_key"]; ok {
+			operationKey = strings.TrimSpace(fmt.Sprintf("%v", op))
+		}
 
 		req := &db.PurchaseRequest{
 			UserID:         user.ID,
@@ -177,6 +181,7 @@ func HandleReceiptPhoto(c telebot.Context) error {
 			ClientEmail:    email,
 			TelegramFileID: fileID,
 			Status:         "pending",
+			OperationKey:   operationKey,
 		}
 
 		if err := db.CreatePurchaseRequest(context.Background(), req); err != nil {
@@ -381,8 +386,21 @@ func HandleAdminApprovePurchase(c telebot.Context) error {
 
 	if activationErr != nil {
 		log.Printf("[CRITICAL] Activation failed for purchase request #%d: %v", reqID, activationErr)
-		_ = db.RollbackPurchaseRequest(context.Background(), reqID)
-		return c.Send("خطا در تایید درخواست خرید: " + activationErr.Error() + ". وضعیت درخواست به حالت در انتظار برگشت داده شد.")
+		provisioningStatus := db.PurchaseProvisioningFailed
+		if xui.IsUnknownOutcome(activationErr) {
+			provisioningStatus = db.PurchaseProvisioningRetryable
+		}
+		if statusErr := db.SetPurchaseProvisioningStatus(context.Background(), reqID, provisioningStatus); statusErr != nil {
+			log.Printf("[CRITICAL] failed to persist provisioning status for purchase request #%d: %v", reqID, statusErr)
+		}
+		if provisioningStatus == db.PurchaseProvisioningRetryable {
+			return c.Send("پرداخت شما تایید شده است اما نتیجه فعال‌سازی سرویس در پنل نامشخص است؛ مبلغ و تایید پرداخت حفظ شد و وضعیت برای تطبیق/تلاش مجدد ثبت گردید.")
+		}
+		return c.Send("پرداخت شما تایید شده است اما فعال‌سازی سرویس انجام نشد؛ تایید پرداخت و تراکنش مالی حفظ شد و وضعیت خطا ثبت گردید.")
+	}
+	if statusErr := db.SetPurchaseProvisioningStatus(context.Background(), reqID, db.PurchaseProvisioningSucceeded); statusErr != nil {
+		log.Printf("[CRITICAL] purchase request #%d activated but provisioning status update failed: %v", reqID, statusErr)
+		return c.Send("پرداخت تایید و سرویس فعال شد، اما ثبت وضعیت فعال‌سازی در دیتابیس نیازمند تطبیق است.")
 	}
 
 	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("✅ درخواست خرید #%d تایید و فعال شد.", reqID)})
@@ -687,9 +705,21 @@ func HandleAdminClaimAssign(c telebot.Context) error {
 	err = createSubscriptionFromApprovedClaim(user, plan, req)
 	if err != nil {
 		log.Printf("[CRITICAL] Claim activation failed for request #%d: %v", req.ID, err)
-		// rollback
-		_ = db.RollbackPurchaseRequest(context.Background(), req.ID)
-		return c.Send("خطا در فعال سازی اشتراک: " + err.Error() + ". وضعیت درخواست به حالت در انتظار برگشت داده شد.")
+		provisioningStatus := db.PurchaseProvisioningFailed
+		if xui.IsUnknownOutcome(err) {
+			provisioningStatus = db.PurchaseProvisioningRetryable
+		}
+		if statusErr := db.SetPurchaseProvisioningStatus(context.Background(), req.ID, provisioningStatus); statusErr != nil {
+			log.Printf("[CRITICAL] failed to persist provisioning status for claim request #%d: %v", req.ID, statusErr)
+		}
+		if provisioningStatus == db.PurchaseProvisioningRetryable {
+			return c.Send("پرداخت شما تایید شده است اما ثبت اشتراک در پنل نامشخص است؛ تایید پرداخت و تراکنش مالی حفظ شد و وضعیت برای تطبیق/تلاش مجدد ثبت گردید.")
+		}
+		return c.Send("پرداخت شما تایید شده است اما ثبت اشتراک انجام نشد؛ تایید پرداخت و تراکنش مالی حفظ شد و وضعیت خطا ثبت گردید.")
+	}
+	if statusErr := db.SetPurchaseProvisioningStatus(context.Background(), req.ID, db.PurchaseProvisioningSucceeded); statusErr != nil {
+		log.Printf("[CRITICAL] claim request #%d activated but provisioning status update failed: %v", req.ID, statusErr)
+		return c.Send("پرداخت تایید و اشتراک ثبت شد، اما ثبت وضعیت فعال‌سازی در دیتابیس نیازمند تطبیق است.")
 	}
 
 	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("✅ درخواست ثبت اشتراک #%d تایید شد.", req.ID)})

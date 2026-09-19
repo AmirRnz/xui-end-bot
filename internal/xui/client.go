@@ -143,14 +143,36 @@ func (c *Client) AddClientResult(req AddClientRequest) WriteResult {
 	if !isTimeoutError(err) {
 		return WriteResult{Outcome: WriteDefinitiveFailure, Err: &WriteError{Outcome: WriteDefinitiveFailure, Err: err}}
 	}
+	// A timeout is ambiguous. Read the client back before deciding whether the
+	// create committed; never issue a second non-idempotent create blindly.
 	remote, verifyErr := c.GetClientByEmail(req.Client.Email)
-	if verifyErr == nil && remote != nil && remote.Email == req.Client.Email && remote.SubID == req.Client.SubID {
-		return WriteResult{Outcome: WriteSucceeded}
+	if verifyErr == nil && remote != nil && clientMatchesAddCore(*remote, req.Client) {
+		missing := missingInboundIDs(remote.InboundIDs, req.InboundIDs)
+		if len(missing) == 0 {
+			return WriteResult{Outcome: WriteSucceeded}
+		}
+
+		// 3x-ui can commit the client while only attaching some inbounds before
+		// the request times out. Attaching only the missing IDs is safe and keeps
+		// the original create operation from being repeated.
+		attachErr := c.AttachClient(req.Client.Email, missing)
+		verified, readErr := c.GetClientByEmail(req.Client.Email)
+		if readErr == nil && verified != nil && clientMatchesAddCore(*verified, req.Client) && len(missingInboundIDs(verified.InboundIDs, req.InboundIDs)) == 0 {
+			return WriteResult{Outcome: WriteSucceeded}
+		}
+		if readErr != nil {
+			verifyErr = readErr
+		} else if attachErr != nil {
+			verifyErr = fmt.Errorf("repairing missing inbound attachments: %w", attachErr)
+		} else {
+			verifyErr = fmt.Errorf("client %s is still missing requested inbound attachments", req.Client.Email)
+		}
 	}
+	unknownErr := fmt.Errorf("x-ui add client outcome is unknown for %s: %w", req.Client.Email, err)
 	if verifyErr != nil {
-		err = fmt.Errorf("%w (verification: %v)", err, verifyErr)
+		unknownErr = fmt.Errorf("x-ui add client outcome is unknown for %s: %w (verification: %v)", req.Client.Email, err, verifyErr)
 	}
-	return WriteResult{Outcome: WriteUnknown, Err: &WriteError{Outcome: WriteUnknown, Err: fmt.Errorf("x-ui add client outcome is unknown for %s: %w", req.Client.Email, err)}}
+	return WriteResult{Outcome: WriteUnknown, Err: &WriteError{Outcome: WriteUnknown, Err: unknownErr}}
 }
 
 func (c *Client) UpdateClientResult(email string, client ClientConfig) WriteResult {
@@ -210,6 +232,44 @@ func mergeClientConfig(current XUIClientInfo, desired ClientConfig) ClientConfig
 		merged.Flow = desired.Flow
 	}
 	return merged
+}
+
+func clientMatchesAddCore(remote XUIClientInfo, desired ClientConfig) bool {
+	identityMatches := desired.ID == ""
+	if desired.ID != "" {
+		if remote.UUID != "" {
+			identityMatches = remote.UUID == desired.ID
+		} else {
+			// Some 3x-ui versions expose the client identity as password/auth
+			// rather than uuid in the readback object.
+			identityMatches = remote.Password == desired.ID || remote.Auth == desired.ID
+		}
+	}
+	return identityMatches && remote.Email == desired.Email &&
+		remote.SubID == desired.SubID &&
+		remote.Enable == desired.Enable &&
+		remote.ExpiryTime == desired.ExpiryTime &&
+		remote.LimitIP == desired.LimitIP &&
+		remote.TotalGB == desired.TotalGB
+}
+
+func missingInboundIDs(have, desired []int) []int {
+	haveSet := make(map[int]struct{}, len(have))
+	for _, id := range have {
+		haveSet[id] = struct{}{}
+	}
+	missing := make([]int, 0, len(desired))
+	seen := make(map[int]struct{}, len(desired))
+	for _, id := range desired {
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		if _, ok := haveSet[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	return missing
 }
 
 func (c *Client) DeleteClient(email string) error {

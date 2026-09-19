@@ -88,7 +88,11 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     start_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     end_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    desired_ip_limit INT,
+    desired_expire_time BIGINT,
+    desired_is_active BOOLEAN,
+    reconciliation_note TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS topup_requests (
@@ -111,6 +115,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     description TEXT NOT NULL DEFAULT '',
     reference_type TEXT NOT NULL DEFAULT '',
     reference_id BIGINT,
+    operation_key TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -162,7 +167,11 @@ ALTER TABLE IF EXISTS subscriptions
     ADD COLUMN IF NOT EXISTS start_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS end_date TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS desired_ip_limit INT,
+    ADD COLUMN IF NOT EXISTS desired_expire_time BIGINT,
+    ADD COLUMN IF NOT EXISTS desired_is_active BOOLEAN,
+    ADD COLUMN IF NOT EXISTS reconciliation_note TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE IF EXISTS bot_settings
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -178,7 +187,11 @@ ALTER TABLE IF EXISTS transactions
     ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'completed',
     ADD COLUMN IF NOT EXISTS reference_type TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS reference_id BIGINT,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS operation_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS transactions_operation_key_uq
+    ON transactions (operation_key);
 
 ALTER TABLE IF EXISTS test_usage
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -258,12 +271,37 @@ CREATE TABLE IF NOT EXISTS purchase_requests (
     client_email TEXT NOT NULL DEFAULT '',
     telegram_file_id TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    provisioning_status TEXT NOT NULL DEFAULT 'pending',
+    operation_key TEXT,
     admin_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Keep this additive so existing production databases retain all payment and
+-- transaction history while gaining the independent provisioning state.
+ALTER TABLE IF EXISTS purchase_requests
+    ADD COLUMN IF NOT EXISTS provisioning_status TEXT NOT NULL DEFAULT 'pending',
+    ADD COLUMN IF NOT EXISTS operation_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS purchase_requests_operation_key_uq
+    ON purchase_requests (operation_key)
+    WHERE operation_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS reconciliation_records (
+    id BIGSERIAL PRIMARY KEY,
+    operation_key TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    user_id BIGINT REFERENCES bot_users(id) ON DELETE SET NULL,
+    subscription_id BIGINT REFERENCES subscriptions(id) ON DELETE SET NULL,
+    purchase_request_id BIGINT REFERENCES purchase_requests(id) ON DELETE SET NULL,
+    desired_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+    observed_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error_message TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE IF EXISTS test_plans
     ADD COLUMN IF NOT EXISTS ip_limit INT NOT NULL DEFAULT 1;
-
-

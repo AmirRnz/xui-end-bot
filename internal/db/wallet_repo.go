@@ -9,21 +9,28 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+var ErrWalletOperationAlreadyApplied = errors.New("wallet operation already applied")
+
 func CreateWalletTransaction(ctx context.Context, tx *WalletTransaction) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
 	amount := tx.Amount
 	query := `
-		INSERT INTO transactions (user_id, amount, type, status, description, reference_type, reference_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO transactions (user_id, amount, type, status, description, reference_type, reference_id, operation_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''))
+		ON CONFLICT (operation_key) DO NOTHING
 		RETURNING id, created_at, updated_at
 	`
 	if tx.Status == "" {
 		tx.Status = "completed"
 	}
-	return Pool.QueryRow(ctx, query, tx.UserID, amount, tx.Type, tx.Status, tx.Description, tx.ReferenceType, tx.ReferenceID).
+	err := Pool.QueryRow(ctx, query, tx.UserID, amount, tx.Type, tx.Status, tx.Description, tx.ReferenceType, tx.ReferenceID, tx.OperationKey).
 		Scan(&tx.ID, &tx.CreatedAt, &tx.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) && tx.OperationKey != "" {
+		return ErrWalletOperationAlreadyApplied
+	}
+	return err
 }
 
 func UpdateWalletTransactionStatus(ctx context.Context, id int, status string) error {
@@ -32,6 +39,15 @@ func UpdateWalletTransactionStatus(ctx context.Context, id int, status string) e
 
 	_, err := Pool.Exec(ctx, `UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2`, status, id)
 	return err
+}
+
+func HasWalletOperation(ctx context.Context, operationKey string) (bool, error) {
+	ctx, cancel := dbCtx(ctx)
+	defer cancel()
+
+	var exists bool
+	err := Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM transactions WHERE operation_key = $1)`, operationKey).Scan(&exists)
+	return exists, err
 }
 
 func GetPendingDepositsCount(ctx context.Context) (int, error) {
@@ -44,6 +60,10 @@ func GetPendingDepositsCount(ctx context.Context) (int, error) {
 }
 
 func AddWalletBalance(ctx context.Context, userID int64, amount float64) error {
+	return AddWalletBalanceWithKey(ctx, userID, amount, "wallet balance adjustment", "")
+}
+
+func AddWalletBalanceWithKey(ctx context.Context, userID int64, amount float64, description, operationKey string) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
@@ -58,6 +78,25 @@ func AddWalletBalance(ctx context.Context, userID int64, amount float64) error {
 	}
 	defer tx.Rollback(ctx)
 
+	claimed := false
+	if operationKey != "" {
+		var insertedID int64
+		err = tx.QueryRow(ctx, `
+			INSERT INTO transactions (user_id, amount, type, status, description, operation_key)
+			VALUES ($1, $2, 'credit', 'completed', $3, $4)
+			ON CONFLICT (operation_key) DO NOTHING
+			RETURNING id
+		`, userID, amountInt, description, operationKey).Scan(&insertedID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			_ = tx.Rollback(ctx)
+			return ErrWalletOperationAlreadyApplied
+		}
+		if err != nil {
+			return err
+		}
+		claimed = true
+	}
+
 	tag, err := tx.Exec(ctx, `UPDATE bot_users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2`, amountInt, userID)
 	if err != nil {
 		return err
@@ -66,17 +105,23 @@ func AddWalletBalance(ctx context.Context, userID int64, amount float64) error {
 		return pgx.ErrNoRows
 	}
 
-	_, err = tx.Exec(ctx, `
-		INSERT INTO transactions (user_id, amount, type, status, description)
-		VALUES ($1, $2, $3, 'completed', $4)
-	`, userID, amountInt, transactionType(amountInt), "wallet balance adjustment")
-	if err != nil {
-		return err
+	if !claimed {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO transactions (user_id, amount, type, status, description)
+			VALUES ($1, $2, $3, 'completed', $4)
+		`, userID, amountInt, transactionType(amountInt), description)
+		if err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
 
 func DebitWalletBalance(ctx context.Context, userID int64, amount float64, description string) error {
+	return DebitWalletBalanceWithKey(ctx, userID, amount, description, "")
+}
+
+func DebitWalletBalanceWithKey(ctx context.Context, userID int64, amount float64, description, operationKey string) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
@@ -90,6 +135,25 @@ func DebitWalletBalance(ctx context.Context, userID int64, amount float64, descr
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	claimed := false
+	if operationKey != "" {
+		var insertedID int64
+		err = tx.QueryRow(ctx, `
+			INSERT INTO transactions (user_id, amount, type, status, description, operation_key)
+			VALUES ($1, $2, 'debit', 'completed', $3, $4)
+			ON CONFLICT (operation_key) DO NOTHING
+			RETURNING id
+		`, userID, -amountInt, description, operationKey).Scan(&insertedID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			_ = tx.Rollback(ctx)
+			return ErrWalletOperationAlreadyApplied
+		}
+		if err != nil {
+			return err
+		}
+		claimed = true
+	}
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE bot_users
@@ -103,17 +167,23 @@ func DebitWalletBalance(ctx context.Context, userID int64, amount float64, descr
 		return errors.New("insufficient balance")
 	}
 
-	_, err = tx.Exec(ctx, `
-		INSERT INTO transactions (user_id, amount, type, status, description)
-		VALUES ($1, $2, 'debit', 'completed', $3)
-	`, userID, -amountInt, description)
-	if err != nil {
-		return err
+	if !claimed {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO transactions (user_id, amount, type, status, description)
+			VALUES ($1, $2, 'debit', 'completed', $3)
+		`, userID, -amountInt, description)
+		if err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
 
 func CreditWalletBalance(ctx context.Context, userID int64, amount float64, description string) error {
+	return CreditWalletBalanceWithKey(ctx, userID, amount, description, "")
+}
+
+func CreditWalletBalanceWithKey(ctx context.Context, userID int64, amount float64, description, operationKey string) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
@@ -128,6 +198,25 @@ func CreditWalletBalance(ctx context.Context, userID int64, amount float64, desc
 	}
 	defer tx.Rollback(ctx)
 
+	claimed := false
+	if operationKey != "" {
+		var insertedID int64
+		err = tx.QueryRow(ctx, `
+			INSERT INTO transactions (user_id, amount, type, status, description, operation_key)
+			VALUES ($1, $2, 'credit', 'completed', $3, $4)
+			ON CONFLICT (operation_key) DO NOTHING
+			RETURNING id
+		`, userID, amountInt, description, operationKey).Scan(&insertedID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			_ = tx.Rollback(ctx)
+			return ErrWalletOperationAlreadyApplied
+		}
+		if err != nil {
+			return err
+		}
+		claimed = true
+	}
+
 	tag, err := tx.Exec(ctx, `UPDATE bot_users SET wallet_balance = wallet_balance + $1, updated_at = NOW() WHERE id = $2`, amountInt, userID)
 	if err != nil {
 		return err
@@ -136,12 +225,14 @@ func CreditWalletBalance(ctx context.Context, userID int64, amount float64, desc
 		return pgx.ErrNoRows
 	}
 
-	_, err = tx.Exec(ctx, `
-		INSERT INTO transactions (user_id, amount, type, status, description)
-		VALUES ($1, $2, 'credit', 'completed', $3)
-	`, userID, amountInt, description)
-	if err != nil {
-		return err
+	if !claimed {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO transactions (user_id, amount, type, status, description)
+			VALUES ($1, $2, 'credit', 'completed', $3)
+		`, userID, amountInt, description)
+		if err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
@@ -208,7 +299,7 @@ func GetWalletTransactions(ctx context.Context, userID int64, limit int) ([]*Wal
 		limit = 10
 	}
 	rows, err := Pool.Query(ctx, `
-		SELECT id, user_id, amount, type, status, description, reference_type, reference_id, created_at, updated_at
+		SELECT id, user_id, amount, type, status, description, reference_type, reference_id, COALESCE(operation_key, ''), created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -222,7 +313,7 @@ func GetWalletTransactions(ctx context.Context, userID int64, limit int) ([]*Wal
 	var txs []*WalletTransaction
 	for rows.Next() {
 		tx := &WalletTransaction{}
-		if err := rows.Scan(&tx.ID, &tx.UserID, &tx.Amount, &tx.Type, &tx.Status, &tx.Description, &tx.ReferenceType, &tx.ReferenceID, &tx.CreatedAt, &tx.UpdatedAt); err != nil {
+		if err := rows.Scan(&tx.ID, &tx.UserID, &tx.Amount, &tx.Type, &tx.Status, &tx.Description, &tx.ReferenceType, &tx.ReferenceID, &tx.OperationKey, &tx.CreatedAt, &tx.UpdatedAt); err != nil {
 			return nil, err
 		}
 		txs = append(txs, tx)
