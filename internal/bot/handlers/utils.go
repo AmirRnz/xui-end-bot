@@ -241,14 +241,22 @@ func sendSubscriptionResult(c telebot.Context, link string, detailsMsg string) e
 			File:    telebot.FromReader(bytes.NewReader(png)),
 			Caption: fmt.Sprintf("`%s`", link),
 		}
-		_ = c.Send(photo, telebot.ModeMarkdown)
+		if sendErr := c.Send(photo, telebot.ModeMarkdown); sendErr != nil {
+			if sendErr := c.Send(fmt.Sprintf("`%s`", link), telebot.ModeMarkdown); sendErr != nil {
+				return sendErr
+			}
+		}
 	} else {
-		_ = c.Send(fmt.Sprintf("`%s`", link), telebot.ModeMarkdown)
+		if sendErr := c.Send(fmt.Sprintf("`%s`", link), telebot.ModeMarkdown); sendErr != nil {
+			return sendErr
+		}
 	}
 
 	// Send details message
 	if detailsMsg != "" {
-		_ = c.Send(FormatMarkdown(detailsMsg), telebot.ModeMarkdown)
+		if sendErr := c.Send(FormatMarkdown(detailsMsg), telebot.ModeMarkdown); sendErr != nil {
+			return sendErr
+		}
 	}
 	return nil
 }
@@ -266,14 +274,22 @@ func sendSubscriptionResultTo(recipientID int64, link string, detailsMsg string)
 				File:    telebot.FromReader(bytes.NewReader(png)),
 				Caption: fmt.Sprintf("`%s`", link),
 			}
-			_, _ = bot.Bot.Send(user, photo, telebot.ModeMarkdown)
+			if _, sendErr := bot.Bot.Send(user, photo, telebot.ModeMarkdown); sendErr != nil {
+				if _, sendErr := bot.Bot.Send(user, fmt.Sprintf("`%s`", link), telebot.ModeMarkdown); sendErr != nil {
+					return sendErr
+				}
+			}
 		} else {
-			_, _ = bot.Bot.Send(user, fmt.Sprintf("`%s`", link), telebot.ModeMarkdown)
+			if _, sendErr := bot.Bot.Send(user, fmt.Sprintf("`%s`", link), telebot.ModeMarkdown); sendErr != nil {
+				return sendErr
+			}
 		}
 	}
 
 	if detailsMsg != "" {
-		_, _ = bot.Bot.Send(user, FormatMarkdown(detailsMsg), telebot.ModeMarkdown)
+		if _, sendErr := bot.Bot.Send(user, FormatMarkdown(detailsMsg), telebot.ModeMarkdown); sendErr != nil {
+			return sendErr
+		}
 	}
 	return nil
 }

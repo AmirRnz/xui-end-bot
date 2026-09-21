@@ -263,7 +263,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 		"📡 اینباندها: %s\n"+
 		"⏱️ مدت زمان: %s\n"+
 		"💾 سقف حجم: %s\n"+
-		"⚡ فلو (Flow): %s\n"+
+		"⚡ فلو: %s\n"+
 		"🌐 محدودیت آی‌پی همزمان: %s\n"+
 		"📊 سقف روزانه: %d\n"+
 		"👥 دسترسی: %s\n"+
@@ -346,7 +346,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		"%s"+
 		"🌐 محدودیت آی‌پی همزمان: %s\n"+
 		"💲 قیمت هر آی‌پی اضافی: %s تومان\n"+
-		"⚡ فلو (Flow): %s\n"+
+		"⚡ فلو: %s\n"+
 		"🏷️ تخفیف‌ها: %s\n"+
 		"👥 دسترسی: %s\n"+
 		"🔄 همگام‌سازی اشتراک‌های فعال: %t\n",
@@ -450,7 +450,7 @@ func HandleAdminDraftEdit(c telebot.Context) error {
 			menu.Row(menu.Data("⬅️ بازگشت", "admin_draft_set_flow", editingType+":back")),
 		)
 		currentFlow := draftGetString(draft, "flow")
-		prompt := fmt.Sprintf("⚡ **انتخاب فلو (Flow)**:\n\n**وضعیت فعلی**: %s", nonEmpty(currentFlow, "(پیش‌فرض/خالی)"))
+		prompt := fmt.Sprintf("⚡ **انتخاب فلو**:\n\n**وضعیت فعلی**: %s", nonEmpty(currentFlow, "(پیش‌فرض/خالی)"))
 		return maybeEditOrSend(c, prompt, menu)
 	}
 

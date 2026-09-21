@@ -518,7 +518,7 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 			desiredActive := sub.IsActive
 			if recErr := db.MarkSubscriptionReconciliationRequired(context.Background(), sub.ID, &newLimit, sub.ExpireTime, &desiredActive, "wallet IP upgrade has unknown 3x-ui outcome"); recErr != nil {
 				log.Printf("[CRITICAL] failed to mark IP upgrade reconciliation for subscription %d: %v", sub.ID, recErr)
-				return c.Send(fmt.Sprintf("نتیجه ارتقای پنل نامشخص است؛ مبلغ بازگردانده نشد اما ثبت خودکار تطبیق با خطا مواجه شد (%v). هیچ درخواستی به‌طور خودکار ثبت نشده است؛ لطفا با پشتیبانی تماس بگیرید.", recErr))
+				return c.Send("نتیجه ارتقای پنل نامشخص است؛ مبلغ بازگردانده نشد اما ثبت خودکار تطبیق با خطا مواجه شد. هیچ درخواستی به‌طور خودکار ثبت نشده است؛ لطفا با پشتیبانی تماس بگیرید.")
 			}
 			return c.Send("نتیجه ارتقای پنل نامشخص است؛ مبلغ بازگردانده نشد و سرویس برای تطبیق ثبت شد.")
 		}
@@ -529,7 +529,8 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 				return c.Send("خطا در بروزرسانی پنل. مبلغ ارتقا به کیف پول شما برگشت داده شد.")
 			}
 			if refundRes.ReconciliationPersisted {
-				return c.Send(fmt.Sprintf("خطا در بروزرسانی پنل رخ داد، اما بازگشت خودکار وجه به کیف پول نیز با خطا مواجه شد (%v). عملیات با شناسه پیگیری %s جهت بررسی و تطبیق ثبت گردید.", refundRes.RefundErr, operationKey+":refund"))
+				log.Printf("[ERROR] IP upgrade refund failed: %v", refundRes.RefundErr)
+				return c.Send(fmt.Sprintf("خطا در بروزرسانی پنل رخ داد، اما بازگشت خودکار وجه به کیف پول نیز با خطا مواجه شد. عملیات با شناسه پیگیری %s جهت بررسی و تطبیق ثبت گردید.", operationKey+":refund"))
 			}
 			log.Printf("[CRITICAL] failed to refund wallet and failed to persist reconciliation for user %d, opKey %s: refundErr=%v, reconErr=%v", user.ID, operationKey+":refund", refundRes.RefundErr, refundRes.ReconciliationErr)
 			return c.Send(fmt.Sprintf("خطا در بروزرسانی پنل رخ داد و بازگشت خودکار وجه نیز با خطا مواجه شد. ثبت خودکار گزارش خطا نیز با خطا مواجه گردید؛ هیچ درخواستی به‌طور خودکار در سیستم ثبت نشده است. لطفا فورا با ارسال شناسه زیر به پشتیبانی اطلاع دهید:\n%s", operationKey+":refund"))
@@ -589,18 +590,35 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 		currency = "تومان"
 	}
 
-	// Change state to awaiting_purchase_receipt with IP upgrade metadata
 	if callbackToken == "" {
 		callbackToken = newOperationToken()
 	}
-	bot.FSM.SetState(user.TelegramID, "awaiting_purchase_receipt", map[string]interface{}{
+	subID64 := int64(sub.ID)
+	fsmData := map[string]interface{}{
 		"type":            "upgrade_ip",
 		"subscription_id": fmt.Sprintf("%d", sub.ID),
 		"ip_limit":        fmt.Sprintf("%d", newLimit),
 		"price":           fmt.Sprintf("%.2f", cost),
+		"price_toman":     fmt.Sprintf("%d", int64(cost)),
 		"operation_key":   operationKeyFromToken("direct_upgrade_ip", callbackToken),
 		"operation_token": callbackToken,
-	})
+	}
+	intent := &db.PaymentIntent{
+		UserID:               user.ID,
+		IntentToken:          callbackToken,
+		ActionType:           "upgrade_ip",
+		SubscriptionID:       &subID64,
+		AmountToman:          int64(cost),
+		Months:               months,
+		IPLimit:              newLimit,
+		ClientEmail:          sub.ClientEmail,
+		ProvisioningSnapshot: fsmData,
+		Status:               db.IntentStatusAwaitingReceipt,
+	}
+	if _, err := db.CreatePaymentIntent(context.Background(), intent); err != nil {
+		log.Printf("[INTENT] Failed to create payment intent for user %d IP upgrade: %v", user.ID, err)
+	}
+	bot.FSM.SetState(user.TelegramID, "awaiting_purchase_receipt", fsmData)
 
 	var text strings.Builder
 	text.WriteString("💳 **پرداخت مستقیم برای ارتقای تعداد کاربران همزمان**\n\n")
@@ -860,7 +878,7 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 		if walletRemoteReconciliationRequired(err) {
 			if recErr := db.MarkSubscriptionReconciliationRequired(context.Background(), sub.ID, nil, desiredExpireTime, &desiredActive, "wallet extension has unknown 3x-ui outcome"); recErr != nil {
 				log.Printf("[CRITICAL] failed to mark extension reconciliation for subscription %d: %v", sub.ID, recErr)
-				return c.Send(fmt.Sprintf("نتیجه تمدید در پنل نامشخص است؛ مبلغ بازگردانده نشد اما ثبت خودکار تطبیق با خطا مواجه شد (%v). هیچ درخواستی به‌طور خودکار ثبت نشده است؛ لطفا با پشتیبانی تماس بگیرید.", recErr))
+				return c.Send("نتیجه تمدید در پنل نامشخص است؛ مبلغ بازگردانده نشد اما ثبت خودکار تطبیق با خطا مواجه شد. هیچ درخواستی به‌طور خودکار ثبت نشده است؛ لطفا با پشتیبانی تماس بگیرید.")
 			}
 			return c.Send("نتیجه تمدید در پنل نامشخص است؛ مبلغ بازگردانده نشد و وضعیت برای تطبیق ثبت شد.")
 		}
@@ -871,7 +889,8 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 				return c.Send("خطا در بروزرسانی پنل. مبلغ تمدید به کیف پول شما بازگردانده شد.")
 			}
 			if refundRes.ReconciliationPersisted {
-				return c.Send(fmt.Sprintf("خطا در بروزرسانی پنل رخ داد، اما بازگشت خودکار وجه به کیف پول نیز با خطا مواجه شد (%v). عملیات با شناسه پیگیری %s جهت بررسی و تطبیق ثبت گردید.", refundRes.RefundErr, operationKey+":refund"))
+				log.Printf("[ERROR] Extension refund failed: %v", refundRes.RefundErr)
+				return c.Send(fmt.Sprintf("خطا در بروزرسانی پنل رخ داد، اما بازگشت خودکار وجه به کیف پول نیز با خطا مواجه شد. عملیات با شناسه پیگیری %s جهت بررسی و تطبیق ثبت گردید.", operationKey+":refund"))
 			}
 			log.Printf("[CRITICAL] failed to refund wallet and failed to persist reconciliation for user %d, opKey %s: refundErr=%v, reconErr=%v", user.ID, operationKey+":refund", refundRes.RefundErr, refundRes.ReconciliationErr)
 			return c.Send(fmt.Sprintf("خطا در بروزرسانی پنل رخ داد و بازگشت خودکار وجه نیز با خطا مواجه شد. ثبت خودکار گزارش خطا نیز با خطا مواجه گردید؛ هیچ درخواستی به‌طور خودکار در سیستم ثبت نشده است. لطفا فورا با ارسال شناسه زیر به پشتیبانی اطلاع دهید:\n%s", operationKey+":refund"))
@@ -932,8 +951,13 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 		currency = "تومان"
 	}
 
-	// Change state to awaiting_purchase_receipt with Extend metadata
-	bot.FSM.SetState(user.TelegramID, "awaiting_purchase_receipt", map[string]interface{}{
+	subID64 := int64(sub.ID)
+	var planID64Ptr *int64
+	if plan != nil {
+		p64 := int64(plan.ID)
+		planID64Ptr = &p64
+	}
+	extendData := map[string]interface{}{
 		"type":            "extend",
 		"subscription_id": fmt.Sprintf("%d", sub.ID),
 		"months":          fmt.Sprintf("%d", months),
@@ -941,7 +965,25 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 		"price_toman":     fmt.Sprintf("%d", cost),
 		"operation_key":   operationKeyFromToken("direct_extend", operationToken),
 		"operation_token": operationToken,
-	})
+	}
+	extendIntent := &db.PaymentIntent{
+		UserID:               user.ID,
+		IntentToken:          operationToken,
+		ActionType:           "extend",
+		SubscriptionID:       &subID64,
+		PlanID:               planID64Ptr,
+		AmountToman:          cost,
+		Months:               months,
+		IPLimit:              displayIPLimit,
+		DataGB:               dataGB,
+		ClientEmail:          sub.ClientEmail,
+		ProvisioningSnapshot: extendData,
+		Status:               db.IntentStatusAwaitingReceipt,
+	}
+	if _, err := db.CreatePaymentIntent(context.Background(), extendIntent); err != nil {
+		log.Printf("[INTENT] Failed to create payment intent for user %d extend: %v", user.ID, err)
+	}
+	bot.FSM.SetState(user.TelegramID, "awaiting_purchase_receipt", extendData)
 
 	var text strings.Builder
 	text.WriteString("💳 **پرداخت مستقیم برای تمدید سرویس**\n\n")
@@ -1026,9 +1068,24 @@ func updateXUIFromSubscription(sub *db.Subscription) error {
 	if bot.XUIClient == nil {
 		return ErrXUIClientUnavailable
 	}
-	client := clientConfigFromSubscription(sub, sub.ClientEmail)
-	client.Enable = sub.IsActive
-	return bot.XUIClient.UpdateClient(sub.ClientEmail, client)
+	expireMilli := int64(0)
+	if sub.ExpireTime != nil {
+		expireMilli = *sub.ExpireTime
+	} else if !sub.EndDate.IsZero() {
+		expireMilli = sub.EndDate.UnixMilli()
+	}
+	limitIP := sub.IPLimit
+	enable := sub.IsActive
+	patch := xui.ClientPatch{
+		Enable:     &enable,
+		ExpiryTime: &expireMilli,
+		LimitIP:    &limitIP,
+	}
+	if sub.TrafficLimitBytes > 0 {
+		totalGB := sub.TrafficLimitBytes
+		patch.TotalGB = &totalGB
+	}
+	return bot.XUIClient.UpdateClientPatch(sub.ClientEmail, patch)
 }
 
 func updateXUIRename(oldEmail string, sub *db.Subscription) error {

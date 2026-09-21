@@ -410,3 +410,222 @@ func TestHandleUpdateReconciliation_DivergentState_MovesToManualReview(t *testin
 		t.Fatal("expected error when DB subscription lookup fails")
 	}
 }
+
+func TestHandlePurchaseReconciliation_CommercialIdentityChecks(t *testing.T) {
+	quoteID := int64(123)
+	payload := &PurchaseProvisioningPayload{
+		UserID:        1001,
+		Email:         "user@example.com",
+		ExpectedUUID:  "uuid-abc",
+		ExpectedSubID: "sub-xyz",
+		QuoteID:       &quoteID,
+		OperationKey:  "op_ident_check",
+	}
+	rec := NewPurchaseProvisioningRecord(payload)
+
+	xuiClient := &mockXUI{
+		client: &xui.XUIClientInfo{
+			Email: "user@example.com",
+			UUID:  "uuid-abc",
+			SubID: "sub-xyz",
+		},
+	}
+
+	t.Run("user_id mismatch moves to manual review", func(t *testing.T) {
+		p := &Processor{
+			XUI: xuiClient,
+			GetSubscriptionByEmailFn: func(ctx context.Context, email string) (*db.Subscription, error) {
+				return &db.Subscription{
+					ID:         1,
+					UserID:     9999, // mismatch!
+					ClientUUID: "uuid-abc",
+					SubID:      "sub-xyz",
+					QuoteID:    &quoteID,
+				}, nil
+			},
+		}
+		outcome := p.handlePurchaseReconciliation(context.Background(), rec)
+		if outcome.Kind != OutcomeManualReview {
+			t.Fatalf("expected OutcomeManualReview, got %v", outcome.Kind)
+		}
+		if !strings.Contains(outcome.Reason, "user_id mismatch") {
+			t.Fatalf("expected reason to mention user_id mismatch, got: %s", outcome.Reason)
+		}
+	})
+
+	t.Run("UUID mismatch moves to manual review", func(t *testing.T) {
+		p := &Processor{
+			XUI: xuiClient,
+			GetSubscriptionByEmailFn: func(ctx context.Context, email string) (*db.Subscription, error) {
+				return &db.Subscription{
+					ID:         1,
+					UserID:     1001,
+					ClientUUID: "uuid-different", // mismatch!
+					SubID:      "sub-xyz",
+					QuoteID:    &quoteID,
+				}, nil
+			},
+		}
+		outcome := p.handlePurchaseReconciliation(context.Background(), rec)
+		if outcome.Kind != OutcomeManualReview {
+			t.Fatalf("expected OutcomeManualReview, got %v", outcome.Kind)
+		}
+		if !strings.Contains(outcome.Reason, "UUID mismatch") {
+			t.Fatalf("expected reason to mention UUID mismatch, got: %s", outcome.Reason)
+		}
+	})
+
+	t.Run("sub_id mismatch moves to manual review", func(t *testing.T) {
+		p := &Processor{
+			XUI: xuiClient,
+			GetSubscriptionByEmailFn: func(ctx context.Context, email string) (*db.Subscription, error) {
+				return &db.Subscription{
+					ID:         1,
+					UserID:     1001,
+					ClientUUID: "uuid-abc",
+					SubID:      "sub-different", // mismatch!
+					QuoteID:    &quoteID,
+				}, nil
+			},
+		}
+		outcome := p.handlePurchaseReconciliation(context.Background(), rec)
+		if outcome.Kind != OutcomeManualReview {
+			t.Fatalf("expected OutcomeManualReview, got %v", outcome.Kind)
+		}
+		if !strings.Contains(outcome.Reason, "sub_id mismatch") {
+			t.Fatalf("expected reason to mention sub_id mismatch, got: %s", outcome.Reason)
+		}
+	})
+
+	t.Run("quote_id mismatch moves to manual review", func(t *testing.T) {
+		differentQuote := int64(999)
+		p := &Processor{
+			XUI: xuiClient,
+			GetSubscriptionByEmailFn: func(ctx context.Context, email string) (*db.Subscription, error) {
+				return &db.Subscription{
+					ID:         1,
+					UserID:     1001,
+					ClientUUID: "uuid-abc",
+					SubID:      "sub-xyz",
+					QuoteID:    &differentQuote, // mismatch!
+				}, nil
+			},
+		}
+		outcome := p.handlePurchaseReconciliation(context.Background(), rec)
+		if outcome.Kind != OutcomeManualReview {
+			t.Fatalf("expected OutcomeManualReview, got %v", outcome.Kind)
+		}
+		if !strings.Contains(outcome.Reason, "quote_id mismatch") {
+			t.Fatalf("expected reason to mention quote_id mismatch, got: %s", outcome.Reason)
+		}
+	})
+
+	t.Run("all identity matches resolves successfully", func(t *testing.T) {
+		p := &Processor{
+			XUI: xuiClient,
+			GetSubscriptionByEmailFn: func(ctx context.Context, email string) (*db.Subscription, error) {
+				return &db.Subscription{
+					ID:         1,
+					UserID:     1001,
+					ClientUUID: "uuid-abc",
+					SubID:      "sub-xyz",
+					QuoteID:    &quoteID,
+				}, nil
+			},
+		}
+		outcome := p.handlePurchaseReconciliation(context.Background(), rec)
+		if outcome.Kind != OutcomeResolved {
+			t.Fatalf("expected OutcomeResolved, got %v (%s)", outcome.Kind, outcome.Reason)
+		}
+	})
+}
+
+func TestHandleDirectPaymentProvisioning_StatusSemanticsAndIdentity(t *testing.T) {
+	quoteID := int64(555)
+	directPayload := &DirectPaymentProvisioningPayload{
+		PurchaseRequestID: 77,
+		UserID:            1001,
+		ClientEmail:       "direct@example.com",
+		ExpectedUUID:      "uuid-direct",
+		ExpectedSubID:     "sub-direct",
+		QuoteID:           &quoteID,
+		OperationKey:      "op_direct_test",
+	}
+	rec := NewDirectPaymentProvisioningRecord(directPayload)
+
+	xuiClient := &mockXUI{
+		client: &xui.XUIClientInfo{
+			Email: "direct@example.com",
+			UUID:  "uuid-direct",
+			SubID: "sub-direct",
+		},
+	}
+
+	t.Run("purchase request pending moves to manual review", func(t *testing.T) {
+		p := &Processor{
+			XUI: xuiClient,
+			GetPurchaseRequestByIDFn: func(ctx context.Context, id int64) (*db.PurchaseRequest, error) {
+				return &db.PurchaseRequest{
+					ID:                 id,
+					Status:             "pending", // still pending approval!
+					ProvisioningStatus: db.PurchaseProvisioningPending,
+				}, nil
+			},
+		}
+		outcome := p.handleDirectPaymentProvisioning(context.Background(), rec)
+		if outcome.Kind != OutcomeManualReview {
+			t.Fatalf("expected OutcomeManualReview for pending purchase request, got %v", outcome.Kind)
+		}
+		if !strings.Contains(outcome.Reason, "still pending admin approval") {
+			t.Fatalf("expected reason to mention still pending admin approval, got: %s", outcome.Reason)
+		}
+	})
+
+	t.Run("purchase request rejected resolves as superseded", func(t *testing.T) {
+		p := &Processor{
+			XUI: xuiClient,
+			GetPurchaseRequestByIDFn: func(ctx context.Context, id int64) (*db.PurchaseRequest, error) {
+				return &db.PurchaseRequest{
+					ID:                 id,
+					Status:             "rejected",
+					ProvisioningStatus: db.PurchaseProvisioningPending,
+				}, nil
+			},
+		}
+		outcome := p.handleDirectPaymentProvisioning(context.Background(), rec)
+		if outcome.Kind != OutcomeResolved {
+			t.Fatalf("expected OutcomeResolved for rejected purchase request, got %v", outcome.Kind)
+		}
+		if !strings.Contains(outcome.Resolution, "superseded") {
+			t.Fatalf("expected resolution to mention superseded, got: %s", outcome.Resolution)
+		}
+	})
+
+	t.Run("existing sub identity mismatch moves to manual review", func(t *testing.T) {
+		p := &Processor{
+			XUI: xuiClient,
+			GetPurchaseRequestByIDFn: func(ctx context.Context, id int64) (*db.PurchaseRequest, error) {
+				return &db.PurchaseRequest{
+					ID:                 id,
+					Status:             "approved",
+					ProvisioningStatus: db.PurchaseProvisioningPending,
+				}, nil
+			},
+			GetSubscriptionByEmailFn: func(ctx context.Context, email string) (*db.Subscription, error) {
+				return &db.Subscription{
+					ID:         20,
+					UserID:     9999, // user mismatch!
+					ClientUUID: "uuid-direct",
+					SubID:      "sub-direct",
+				}, nil
+			},
+		}
+		outcome := p.handleDirectPaymentProvisioning(context.Background(), rec)
+		if outcome.Kind != OutcomeManualReview {
+			t.Fatalf("expected OutcomeManualReview on identity mismatch, got %v", outcome.Kind)
+		}
+		if !strings.Contains(outcome.Reason, "user_id mismatch") {
+			t.Fatalf("expected reason to mention user_id mismatch, got: %s", outcome.Reason)
+		}
+	})
+}

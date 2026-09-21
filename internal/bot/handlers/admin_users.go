@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/telebot.v3"
 	"xui-end-bot/internal/bot"
@@ -191,7 +193,11 @@ func HandleAdminUserCreditPrompt(c telebot.Context) error {
 	if admin == nil || err != nil {
 		return c.Send("کاربر نامعتبر است.")
 	}
-	bot.FSM.SetState(admin.TelegramID, "awaiting_manual_credit", map[string]interface{}{"target_user_id": fmt.Sprintf("%d", userID)})
+	opKey := fmt.Sprintf("manual_admin_credit:%d:%d:%d", admin.TelegramID, userID, time.Now().UnixNano())
+	bot.FSM.SetState(admin.TelegramID, "awaiting_manual_credit", map[string]interface{}{
+		"target_user_id": fmt.Sprintf("%d", userID),
+		"operation_key":  opKey,
+	})
 	return maybeEditOrSend(c, "لطفاً مبلغ مورد نظر جهت شارژ حساب این کاربر را به تومان وارد کنید:")
 }
 
@@ -200,7 +206,10 @@ func HandleBulkCreditPrompt(c telebot.Context) error {
 	if admin == nil {
 		return c.Send("امکان بارگذاری حساب ادمین وجود ندارد.")
 	}
-	bot.FSM.SetState(admin.TelegramID, "awaiting_bulk_credit_amount", nil)
+	opKey := fmt.Sprintf("bulk_credit:%d:%d", admin.TelegramID, time.Now().UnixNano())
+	bot.FSM.SetState(admin.TelegramID, "awaiting_bulk_credit_amount", map[string]interface{}{
+		"operation_key": opKey,
+	})
 	return maybeEditOrSend(c, "لطفاً مبلغ مورد نظر جهت شارژ همگانی کلیه کاربران تایید شده را به تومان وارد کنید:")
 }
 
@@ -213,8 +222,22 @@ func ProcessBulkCredit(c telebot.Context, amountStr string) error {
 	if err != nil || amount <= 0 {
 		return c.Send("مبلغ نامعتبر است. لطفاً یک عدد صحیح مثبت وارد کنید.")
 	}
-	count, err := db.CreditAllApprovedUsers(context.Background(), amount, "admin bulk credit")
+	state := bot.FSM.GetState(admin.TelegramID)
+	var opKey string
+	if state != nil && state.Data != nil {
+		if k, ok := state.Data["operation_key"]; ok && k != nil && k != "" && k != "<nil>" {
+			opKey = fmt.Sprintf("%v", k)
+		}
+	}
+	if opKey == "" {
+		opKey = fmt.Sprintf("bulk_credit:%d:%d", admin.TelegramID, time.Now().UnixNano())
+	}
+	count, err := db.CreditAllApprovedUsersWithKey(context.Background(), amount, "admin bulk credit", opKey)
 	if err != nil {
+		if errors.Is(err, db.ErrWalletOperationAlreadyApplied) {
+			bot.FSM.ClearState(admin.TelegramID)
+			return c.Send("این عملیات شارژ همگانی قبلاً اعمال شده است.")
+		}
 		return c.Send("خطا در افزایش موجودی همگانی کاربران.")
 	}
 	bot.FSM.ClearState(admin.TelegramID)

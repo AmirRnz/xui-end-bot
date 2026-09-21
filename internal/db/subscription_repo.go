@@ -174,6 +174,10 @@ func UpdateSubscription(ctx context.Context, s *Subscription) error {
 		return errors.New("database pool is not initialized")
 	}
 
+	if !IsValidSubscriptionStatus(s.Status) {
+		return fmt.Errorf("invalid subscription status: %q", s.Status)
+	}
+
 	if s.EndDate.IsZero() && s.ExpireTime != nil && *s.ExpireTime > 0 {
 		s.EndDate = time.UnixMilli(*s.ExpireTime)
 	}
