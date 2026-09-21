@@ -159,7 +159,7 @@ func TestRemoteCreateSuccessDbFailureCompensation(t *testing.T) {
 				verifyCalls++
 				return nil, nil
 			},
-			func(ctx context.Context, userID int64, amount float64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
+			func(ctx context.Context, userID int64, amount int64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
 				refundCalls++
 				if refKey != "op_a:refund" {
 					t.Fatalf("unexpected refund key: %s", refKey)
@@ -202,7 +202,7 @@ func TestRemoteCreateSuccessDbFailureCompensation(t *testing.T) {
 				return nil // delete confirmed
 			},
 			nil,
-			func(ctx context.Context, userID int64, amount float64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
+			func(ctx context.Context, userID int64, amount int64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
 				refundCalls++
 				return SafeRefundResult{
 					Refunded:                false,
@@ -257,7 +257,7 @@ func TestRemoteCreateSuccessDbFailureCompensation(t *testing.T) {
 				return nil // delete confirmed
 			},
 			nil,
-			func(ctx context.Context, userID int64, amount float64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
+			func(ctx context.Context, userID int64, amount int64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
 				refundCalls++
 				return SafeRefundResult{
 					Refunded:                false,
@@ -316,7 +316,7 @@ func TestRemoteCreateSuccessDbFailureCompensation(t *testing.T) {
 				verifyCalls++
 				return nil, errors.New("verify endpoint unavailable")
 			},
-			func(ctx context.Context, userID int64, amount float64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
+			func(ctx context.Context, userID int64, amount int64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
 				refundCalls++
 				return SafeRefundResult{Refunded: true}
 			},
@@ -364,7 +364,7 @@ func TestRemoteCreateSuccessDbFailureCompensation(t *testing.T) {
 				verifyCalls++
 				return nil, xui.ErrNotFound // confirmed absent on readback
 			},
-			func(ctx context.Context, userID int64, amount float64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
+			func(ctx context.Context, userID int64, amount int64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
 				refundCalls++
 				if refKey != "op_c:refund" {
 					t.Fatalf("unexpected refund key: %s", refKey)
@@ -409,7 +409,7 @@ func TestRemoteCreateSuccessDbFailureCompensation(t *testing.T) {
 				verifyCalls++
 				return &xui.XUIClientInfo{Email: email}, nil // client still present
 			},
-			func(ctx context.Context, userID int64, amount float64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
+			func(ctx context.Context, userID int64, amount int64, desc, origKey, refKey string, subID *int64, extra map[string]any) SafeRefundResult {
 				refundCalls++
 				return SafeRefundResult{Refunded: true}
 			},
@@ -447,7 +447,7 @@ func TestSafeRefundWalletOutcomes(t *testing.T) {
 	// a. refund succeeds
 	t.Run("refund succeeds", func(t *testing.T) {
 		res := safeRefundWalletWithDeps(ctx, 100, 500, "refund", "orig_key", "ref_key", nil, nil,
-			func(ctx context.Context, userID int64, amount float64, description, operationKey string) error {
+			func(ctx context.Context, userID int64, amount int64, description, operationKey string) error {
 				return nil
 			},
 			func(ctx context.Context, record *db.ReconciliationRecord) error {
@@ -466,7 +466,7 @@ func TestSafeRefundWalletOutcomes(t *testing.T) {
 	// b. refund already applied (idempotent success)
 	t.Run("refund already applied", func(t *testing.T) {
 		res := safeRefundWalletWithDeps(ctx, 100, 500, "refund", "orig_key", "ref_key", nil, nil,
-			func(ctx context.Context, userID int64, amount float64, description, operationKey string) error {
+			func(ctx context.Context, userID int64, amount int64, description, operationKey string) error {
 				return db.ErrWalletOperationAlreadyApplied
 			},
 			func(ctx context.Context, record *db.ReconciliationRecord) error {
@@ -487,7 +487,7 @@ func TestSafeRefundWalletOutcomes(t *testing.T) {
 		creditErr := errors.New("db credit failure")
 		var savedRec *db.ReconciliationRecord
 		res := safeRefundWalletWithDeps(ctx, 100, 500, "refund", "orig_key", "ref_key", nil, nil,
-			func(ctx context.Context, userID int64, amount float64, description, operationKey string) error {
+			func(ctx context.Context, userID int64, amount int64, description, operationKey string) error {
 				return creditErr
 			},
 			func(ctx context.Context, record *db.ReconciliationRecord) error {
@@ -514,7 +514,7 @@ func TestSafeRefundWalletOutcomes(t *testing.T) {
 		creditErr := errors.New("db credit failure")
 		reconErr := errors.New("db reconciliation insert failure")
 		res := safeRefundWalletWithDeps(ctx, 100, 500, "refund", "orig_key", "ref_key", nil, nil,
-			func(ctx context.Context, userID int64, amount float64, description, operationKey string) error {
+			func(ctx context.Context, userID int64, amount int64, description, operationKey string) error {
 				return creditErr
 			},
 			func(ctx context.Context, record *db.ReconciliationRecord) error {

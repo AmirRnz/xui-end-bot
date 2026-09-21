@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"gopkg.in/telebot.v3"
 	"xui-end-bot/internal/bot"
+	"xui-end-bot/internal/bot/persian"
 	"xui-end-bot/internal/config"
 	"xui-end-bot/internal/db"
 	"xui-end-bot/internal/xui"
@@ -179,7 +181,6 @@ func HandleViewSubscription(c telebot.Context) error {
 }
 
 func showSubscriptionDetail(c telebot.Context, user *db.User, sub *db.Subscription) error {
-	syncIPLimitFromXUI(sub)
 	statusIcon := "🔴 غیرفعال"
 	if sub.IsActive {
 		statusIcon = "🟢 فعال"
@@ -351,7 +352,6 @@ func HandleSubscriptionLimitMenu(c telebot.Context) error {
 	if !ok {
 		return nil
 	}
-	syncIPLimitFromXUI(sub)
 	if sub.PlanType != db.PlanTypePaid {
 		return c.Send("تغییر سقف کاربر همزمان فقط برای سرویس‌های خریداری شده امکان‌پذیر است.")
 	}
@@ -476,7 +476,7 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 	if months < 1 {
 		months = 1
 	}
-	cost := float64(newLimit-displayIPLimit) * plan.PricePerExtraIP * float64(months)
+	cost := int64(newLimit-displayIPLimit) * int64(math.Round(plan.PricePerExtraIP)) * int64(months)
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
 		currency = "تومان"
@@ -507,7 +507,7 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 		if errors.Is(err, db.ErrWalletOperationAlreadyApplied) {
 			return c.Send("این ارتقا قبلا پردازش شده یا در وضعیت تطبیق قرار دارد.")
 		}
-		return c.Send(fmt.Sprintf("موجودی کیف پول شما کافی نیست. هزینه این ارتقا %.0f %s می‌باشد.", cost, currency))
+		return c.Send(fmt.Sprintf("موجودی کیف پول شما کافی نیست. هزینه این ارتقا %s %s می‌باشد.", persian.FormatMoney(cost), currency))
 	}
 
 	oldState := snapshotSubscriptionWalletState(sub)
@@ -548,7 +548,7 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 	}
 
 	_ = c.Respond(&telebot.CallbackResponse{Text: fmt.Sprintf("✅ تعداد کاربر همزمان به %s افزایش یافت.", formatIPLimit(newLimit))})
-	_ = c.Send(fmt.Sprintf("✅ ارتقا با موفقیت انجام شد. سقف کاربر همزمان به %s کاربر افزایش یافت. هزینه کسر شده: %.0f %s.", formatIPLimit(newLimit), cost, currency))
+	_ = c.Send(fmt.Sprintf("✅ ارتقا با موفقیت انجام شد. سقف کاربر همزمان به %s کاربر افزایش یافت. هزینه کسر شده: %s %s.", formatIPLimit(newLimit), persian.FormatMoney(cost), currency))
 	return showSubscriptionDetail(c, user, sub)
 }
 
@@ -626,7 +626,6 @@ func HandleSubscriptionExtendMenu(c telebot.Context) error {
 	if !ok {
 		return nil
 	}
-	syncIPLimitFromXUI(sub)
 	if sub.PlanType != db.PlanTypePaid {
 		return c.Send("تمدید فقط برای سرویس‌های خریداری شده امکان‌پذیر است.")
 	}
@@ -641,18 +640,18 @@ func HandleSubscriptionExtendMenu(c telebot.Context) error {
 
 	displayIPLimit := sub.IPLimit
 
-	priceFor := func(months int) float64 {
+	priceFor := func(months int) int64 {
 		dataGB := int(sub.TrafficLimitBytes / 1073741824)
 		return calculatePaidPrice(plan, months, displayIPLimit, dataGB)
 	}
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
 		menu.Row(
-			menu.Data(fmt.Sprintf("۱ ماهه — %.0f %s", priceFor(1), currency), "sub_extend_run", fmt.Sprintf("1:%d", sub.ID)),
-			menu.Data(fmt.Sprintf("۳ ماهه — %.0f %s", priceFor(3), currency), "sub_extend_run", fmt.Sprintf("3:%d", sub.ID)),
+			menu.Data(fmt.Sprintf("۱ ماهه — %s %s", persian.FormatMoney(priceFor(1)), currency), "sub_extend_run", fmt.Sprintf("1:%d", sub.ID)),
+			menu.Data(fmt.Sprintf("۳ ماهه — %s %s", persian.FormatMoney(priceFor(3)), currency), "sub_extend_run", fmt.Sprintf("3:%d", sub.ID)),
 		),
 		menu.Row(
-			menu.Data(fmt.Sprintf("۶ ماهه — %.0f %s", priceFor(6), currency), "sub_extend_run", fmt.Sprintf("6:%d", sub.ID)),
+			menu.Data(fmt.Sprintf("۶ ماهه — %s %s", persian.FormatMoney(priceFor(6)), currency), "sub_extend_run", fmt.Sprintf("6:%d", sub.ID)),
 			menu.Data("✏️ مدت دلخواه", "sub_extend_custom", fmt.Sprintf("%d", sub.ID)),
 		),
 		menu.Row(menu.Data("« بازگشت", "view_sub", fmt.Sprintf("%d", sub.ID))),
@@ -728,7 +727,6 @@ func showExtendConfirmation(c telebot.Context, user *db.User, subID int, months 
 	if err != nil || sub == nil || sub.UserID != user.ID {
 		return c.Send("اشتراک یافت نشد.")
 	}
-	syncIPLimitFromXUI(sub)
 	plan, err := paidPlanForSub(sub)
 	if err != nil || plan == nil {
 		return c.Send("طرح مرتبط یافت نشد.")
@@ -761,8 +759,8 @@ func showExtendConfirmation(c telebot.Context, user *db.User, subID int, months 
 	)
 
 	return maybeEditOrSend(c, fmt.Sprintf(
-		"🧾 **تمدید سرویس %s**\n\nمدت تمدید: %d ماه\nهزینه تمدید: **%.0f %s**\n\nموجودی کیف پول شما: %d %s\n\nنحوه پرداخت هزینه تمدید را انتخاب کنید:",
-		sub.DisplayName, months, cost, currency, user.WalletBalance, currency,
+		"🧾 **تمدید سرویس %s**\n\nمدت تمدید: %d ماه\nهزینه تمدید: **%s %s**\n\nموجودی کیف پول شما: %s %s\n\nنحوه پرداخت هزینه تمدید را انتخاب کنید:",
+		sub.DisplayName, months, persian.FormatMoney(cost), currency, persian.FormatMoney(user.WalletBalance), currency,
 	), menu)
 }
 
@@ -789,7 +787,6 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 	if err != nil || sub == nil || sub.UserID != user.ID {
 		return c.Send("اشتراک یافت نشد.")
 	}
-	syncIPLimitFromXUI(sub)
 	if sub.PlanType != db.PlanTypePaid {
 		return c.Send("تمدید فقط برای سرویس‌های خریداری شده امکان‌پذیر است.")
 	}
@@ -830,7 +827,7 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 		if errors.Is(err, db.ErrWalletOperationAlreadyApplied) {
 			return c.Send("این تمدید قبلا پردازش شده یا در وضعیت تطبیق قرار دارد.")
 		}
-		return c.Send(fmt.Sprintf("موجودی کیف پول شما کافی نیست. هزینه تمدید %.0f %s می‌باشد.", cost, currency))
+		return c.Send(fmt.Sprintf("موجودی کیف پول شما کافی نیست. هزینه تمدید %s %s می‌باشد.", persian.FormatMoney(cost), currency))
 	}
 
 	oldState := snapshotSubscriptionWalletState(sub)
@@ -891,8 +888,8 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 		return c.Send("تمدید در پنل انجام شد اما ثبت آن در دیتابیس ناموفق بود؛ مبلغ بازگردانده نشد و وضعیت برای تطبیق ثبت شد.")
 	}
 
-	_ = c.Send(fmt.Sprintf("✅ سرویس با موفقیت تمدید شد. انقضای جدید: %s\nمبلغ پرداخت شده: %.0f %s.",
-		newExpiryLabel, cost, currency))
+	_ = c.Send(fmt.Sprintf("✅ سرویس با موفقیت تمدید شد. انقضای جدید: %s\nمبلغ پرداخت شده: %s %s.",
+		newExpiryLabel, persian.FormatMoney(cost), currency))
 	return showSubscriptionDetail(c, user, sub)
 }
 
@@ -919,7 +916,6 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 	if err != nil || sub == nil || sub.UserID != user.ID {
 		return c.Send("اشتراک یافت نشد.")
 	}
-	syncIPLimitFromXUI(sub)
 	plan, err := paidPlanForSub(sub)
 	if err != nil || plan == nil {
 		return c.Send("طرح یافت نشد.")
@@ -941,14 +937,15 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 		"type":            "extend",
 		"subscription_id": fmt.Sprintf("%d", sub.ID),
 		"months":          fmt.Sprintf("%d", months),
-		"price":           fmt.Sprintf("%.2f", cost),
+		"price":           fmt.Sprintf("%d", cost),
+		"price_toman":     fmt.Sprintf("%d", cost),
 		"operation_key":   operationKeyFromToken("direct_extend", operationToken),
 		"operation_token": operationToken,
 	})
 
 	var text strings.Builder
 	text.WriteString("💳 **پرداخت مستقیم برای تمدید سرویس**\n\n")
-	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%.0f %s**\n\n", cost, currency))
+	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%s %s**\n\n", persian.FormatMoney(cost), currency))
 	if card != "" {
 		text.WriteString(fmt.Sprintf("شماره کارت جهت واریز:\n`%s`\n", card))
 	}
@@ -1165,27 +1162,18 @@ func ProcessClaimSubscriptionLink(c telebot.Context, text string) error {
 		return c.Send("درخواست ثبت برای این اشتراک قبلا ثبت شده است و در انتظار بررسی ادمین می‌باشد.")
 	}
 
-	// 2. Fetch all clients from 3x-ui to verify it exists
+	// 2. Fetch client from 3x-ui to verify it exists
 	if bot.XUIClient == nil {
 		return c.Send("خطا: کلاینت x-ui متصل نیست.")
 	}
 
-	clients, err := bot.XUIClient.ListClients()
-	if err != nil {
-		log.Printf("XUI ListClients failed: %v", err)
-		return c.Send("خطا در دریافت لیست اشتراک‌ها از پنل. لطفا مجددا تلاش کنید.")
-	}
-
-	var targetClient *xui.XUIClientInfo
-	for _, client := range clients {
-		if client.SubID == subID {
-			targetClient = &client
-			break
+	targetClient, err := bot.XUIClient.FindClientBySubID(subID)
+	if err != nil || targetClient == nil {
+		if errors.Is(err, xui.ErrNotFound) || targetClient == nil {
+			return c.Send("اشتراک معتبری با این مشخصات در پنل یافت نشد. لطفا مطمئن شوید لینک ارسال شده صحیح است.")
 		}
-	}
-
-	if targetClient == nil {
-		return c.Send("اشتراک معتبری با این مشخصات در پنل یافت نشد. لطفا مطمئن شوید لینک ارسال شده صحیح است.")
+		log.Printf("XUI FindClientBySubID failed: %v", err)
+		return c.Send("خطا در بررسی اشتراک در پنل. لطفا مجددا تلاش کنید.")
 	}
 
 	// 3. Check if client email already exists in local DB (avoid UNIQUE violation on client_email)

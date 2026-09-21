@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -116,7 +117,10 @@ func CreateSubscription(ctx context.Context, s *Subscription) error {
 	}
 
 	if s.Status == "" {
-		s.Status = "active"
+		s.Status = SubscriptionStatusActive
+	}
+	if !IsValidSubscriptionStatus(s.Status) {
+		return fmt.Errorf("invalid subscription status: %q", s.Status)
 	}
 	if s.DisplayName == "" {
 		s.DisplayName = s.ClientEmail
@@ -153,7 +157,11 @@ func UpdateSubscriptionStatus(ctx context.Context, id int, status string) error 
 		return errors.New("database pool is not initialized")
 	}
 
-	isActive := status == "active"
+	if !IsValidSubscriptionStatus(status) {
+		return fmt.Errorf("invalid subscription status: %q", status)
+	}
+
+	isActive := status == SubscriptionStatusActive
 	_, err := Pool.Exec(ctx, `UPDATE subscriptions SET status = $1, is_active = $2, updated_at = NOW() WHERE id = $3`, status, isActive, id)
 	return err
 }

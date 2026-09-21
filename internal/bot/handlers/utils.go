@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 	"xui-end-bot/internal/bot"
 	"xui-end-bot/internal/db"
 	"xui-end-bot/internal/qr"
+	"xui-end-bot/internal/services/pricing"
 	"xui-end-bot/internal/xui"
 )
 
@@ -154,26 +154,17 @@ func makeClientUUID() string {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", s[:8], s[8:12], s[12:16], s[16:20], s[20:])
 }
 
-func calculatePaidPrice(plan *db.PaidPlan, months, ipLimit int, dataGB int) float64 {
+func calculatePaidPrice(plan *db.PaidPlan, months, ipLimit int, dataGB int) int64 {
 	if plan == nil || months <= 0 {
 		return 0
 	}
-	if ipLimit < plan.BaseIPLimit {
-		ipLimit = plan.BaseIPLimit
-	}
-	extraIPs := ipLimit - plan.BaseIPLimit
-
-	var basePrice float64
-	if plan.IsLimited {
-		basePrice = (float64(dataGB) * plan.PricePerGB) + float64(months-1)*plan.PricePerExtraMonth
-	} else {
-		basePrice = plan.BasePrice * float64(months)
-	}
-
-	extraIPPrice := float64(extraIPs) * plan.PricePerExtraIP * float64(months)
-	subtotal := basePrice + extraIPPrice
-	discount := bestDiscount(plan.DiscountTiers, months)
-	return math.Round(subtotal*(1-discount/100)*100) / 100
+	quote := pricing.CalculateQuote(pricing.QuoteParams{
+		Plan:    plan,
+		Months:  months,
+		IPLimit: ipLimit,
+		DataGB:  dataGB,
+	})
+	return quote.FinalPriceToman
 }
 
 func bestDiscount(tiers []db.DiscountTier, months int) float64 {
@@ -240,7 +231,7 @@ func newClientConfig(email, group string, telegramID int64, totalBytes int64, ex
 
 func sendSubscriptionResult(c telebot.Context, link string, detailsMsg string) error {
 	if link == "" {
-		return c.Send(FormatMarkdown(detailsMsg)+"\nNo subscription link was found.", telebot.ModeMarkdown)
+		return c.Send(FormatMarkdown(detailsMsg)+"\nلینک اشتراکی یافت نشد.", telebot.ModeMarkdown)
 	}
 
 	// Send QR code photo with the link as caption (formatted to be copyable on click)
