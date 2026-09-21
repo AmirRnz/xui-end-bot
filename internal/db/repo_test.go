@@ -230,13 +230,13 @@ func TestSubscriptionRepo(t *testing.T) {
 		t.Fatalf("failed to delete subscription: %v", err)
 	}
 
-	// Verify deleted
+	// Verify the auditable row remains.
 	gotSubDeleted, err := GetSubscriptionByID(ctx, sub.ID)
 	if err != nil {
 		t.Fatalf("failed to check deleted subscription: %v", err)
 	}
-	if gotSubDeleted != nil {
-		t.Fatalf("subscription was not deleted: %+v", gotSubDeleted)
+	if gotSubDeleted == nil || gotSubDeleted.Status != SubscriptionStatusDeleted || gotSubDeleted.IsActive {
+		t.Fatalf("subscription was not marked deleted: %+v", gotSubDeleted)
 	}
 }
 

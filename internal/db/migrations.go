@@ -128,6 +128,12 @@ func runMigrations(ctx context.Context) error {
 		return fmt.Errorf("database pool is not initialized")
 	}
 
+	// Serialize concurrent migration runs during parallel testing
+	_, _ = Pool.Exec(ctx, `SELECT pg_advisory_lock(742948214)`)
+	defer func() {
+		_, _ = Pool.Exec(ctx, `SELECT pg_advisory_unlock(742948214)`)
+	}()
+
 	_, err := Pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INT PRIMARY KEY,

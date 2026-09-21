@@ -209,7 +209,7 @@ func ProcessBulkCredit(c telebot.Context, amountStr string) error {
 	if admin == nil || !isConfiguredAdmin(admin.TelegramID) {
 		return c.Send("شما دسترسی به این دستور را ندارید.")
 	}
-	amount, err := strconv.ParseFloat(strings.TrimSpace(amountStr), 64)
+	amount, err := strconv.ParseInt(strings.TrimSpace(amountStr), 10, 64)
 	if err != nil || amount <= 0 {
 		return c.Send("مبلغ نامعتبر است. لطفاً یک عدد صحیح مثبت وارد کنید.")
 	}
@@ -218,7 +218,7 @@ func ProcessBulkCredit(c telebot.Context, amountStr string) error {
 		return c.Send("خطا در افزایش موجودی همگانی کاربران.")
 	}
 	bot.FSM.ClearState(admin.TelegramID)
-	_ = c.Send(fmt.Sprintf("✅ مبلغ %s تومان با موفقیت به حساب %d کاربر تایید شده افزوده شد.", persian.FormatMoney(int64(amount)), count))
+	_ = c.Send(fmt.Sprintf("✅ مبلغ %s تومان با موفقیت به حساب %d کاربر تایید شده افزوده شد.", persian.FormatMoney(amount), count))
 	return HandleAdminUsers(c)
 }
 
