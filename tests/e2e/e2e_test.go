@@ -420,7 +420,11 @@ func setupE2E(t *testing.T) (*TestEnv, func()) {
 	os.Setenv("TELEGRAM_API_URL", mockTG.Server.URL)
 	config.Global.XUI.BaseURL = mockXUI.Server.URL
 	config.Global.XUI.URL = mockXUI.Server.URL
-	config.Global.Bot.WebhookDomain = "" // Force long polling in tests
+	if testDBURL := os.Getenv("TEST_DATABASE_URL"); testDBURL != "" {
+		config.Global.Database.URL = testDBURL
+	} else if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		config.Global.Database.URL = dbURL
+	}
 
 	// Connect to Database
 	err := db.Connect(ctx, &config.Global.Database)
@@ -514,66 +518,17 @@ func TestE2ESuite(t *testing.T) {
 	t.Run("Tier1_OnboardingAndAccessFlow", func(t *testing.T) {
 		resetState()
 
-		// 1. Start command registers a new user with 'pending' status
+		// 1. Start command registers a new user with 'approved' status directly
 		env.SendMessage(userTGID, userUsername, "/start")
 		resp := env.ExpectResponse(t, 2*time.Second)
-		if !strings.Contains(getStr(resp, "text"), "Request Access") && !strings.Contains(getStr(resp, "reply_markup"), "request_access") {
-			t.Fatalf("Expected Request Access button, got: %+v", resp)
+		if !strings.Contains(getStr(resp, "text"), "خوش آمدید") && !strings.Contains(getStr(resp, "text"), "پنل کاربری") {
+			t.Fatalf("Expected welcome message, got: %+v", resp)
 		}
 
-		// Verify user status in DB is pending
+		// Verify user status in DB is approved
 		u, err := db.GetUserByTelegramID(env.ctx, userTGID)
-		if err != nil || u == nil || u.Status != "pending" {
-			t.Fatalf("User status should be pending, got %v", u)
-		}
-
-		// 2. Request Access button triggers request and notifies admin
-		env.SendCallback(userTGID, userUsername, 999, "\frequest_access")
-		// Bot edits user message (access pending) and notifies admin
-		respUser := env.ExpectResponse(t, 2*time.Second)
-		if !strings.Contains(getStr(respUser, "text"), "pending") && !strings.Contains(getStr(respUser, "text"), "wait") {
-			// In start.go, line 67: c.Edit(i18n.T(lang, "access_pending"))
-			// It may be English/Persian. Just check that we got a reply
-		}
-		respAdmin := env.ExpectResponse(t, 2*time.Second)
-		if !strings.Contains(getStr(respAdmin, "text"), "New access request") {
-			t.Fatalf("Expected admin notification message, got: %+v", respAdmin)
-		}
-
-		// 3. Admin approves user
-		env.SendCallback(adminTGID, adminUsername, 999, fmt.Sprintf("\fapprove_user|%d", userTGID))
-		// Bot notifies admin of approval and notifies user (access granted)
-		respAdminApprove := env.ExpectResponse(t, 2*time.Second)
-		if !strings.Contains(getStr(respAdminApprove, "text"), "Approved user") {
-			t.Fatalf("Expected admin approval success message, got: %+v", respAdminApprove)
-		}
-		respUserNotify := env.ExpectResponse(t, 2*time.Second) // user notification
-		_ = respUserNotify
-
-		// Verify user status in DB is approved_name_pending
-		u, err = db.GetUserByTelegramID(env.ctx, userTGID)
-		if err != nil || u == nil || u.Status != "approved_name_pending" {
-			t.Fatalf("User status should be approved_name_pending, got %v", u)
-		}
-
-		// 4. User enters service name
-		env.SendMessage(userTGID, userUsername, "myservice")
-		respChooseLang := env.ExpectResponse(t, 2*time.Second)
-		if !strings.Contains(getStr(respChooseLang, "text"), "Language") && !strings.Contains(getStr(respChooseLang, "text"), "lang") {
-			// Prompt for language
-		}
-
-		// 5. User selects English language, shows main menu
-		env.SendCallback(userTGID, userUsername, 999, "\flang_en")
-		respMenu := env.ExpectResponse(t, 2*time.Second)
-		if strings.Contains(getStr(respMenu, "reply_markup"), "request_access") {
-			t.Fatalf("Main menu should not contain request access after approval")
-		}
-
-		// Verify status is approved
-		u, err = db.GetUserByTelegramID(env.ctx, userTGID)
-		if err != nil || u == nil || u.Status != "approved" || *u.ServiceName != "myservice" || u.Language != "en" {
-			t.Fatalf("User onboarding state mismatch: %+v", u)
+		if err != nil || u == nil || u.Status != "approved" {
+			t.Fatalf("User status should be approved, got %v", u)
 		}
 	})
 

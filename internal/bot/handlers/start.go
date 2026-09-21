@@ -130,6 +130,8 @@ func HandleText(c telebot.Context) error {
 			return ProcessAdminCreateCustomMonthsText(c, text)
 		case "awaiting_admin_create_client_details":
 			return ProcessAdminCreateClientDetails(c, text)
+		case "awaiting_admin_reconcile_close_reason":
+			return ProcessAdminReconcileCloseReason(c, text)
 		}
 	}
 

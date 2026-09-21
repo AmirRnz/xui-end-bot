@@ -812,7 +812,7 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 		if err := db.CreateSubscription(ctx, sub); err != nil {
 			log.Printf("CreateSubscription DB error for %s: %v. Rolling back XUI client...", email, err)
 			_ = bot.XUIClient.DeleteClient(email)
-			report.WriteString(fmt.Sprintf("❌ **%s**: خطا در ثبت سرویس در دیتابیس (%v)\n\n", cust.Name, err))
+			report.WriteString(fmt.Sprintf("❌ **%s**: خطا در ثبت سرویس در دیتابیس\n\n", cust.Name))
 			continue
 		}
 

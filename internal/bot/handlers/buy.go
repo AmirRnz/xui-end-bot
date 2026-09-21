@@ -38,6 +38,10 @@ func HandleBuySubFlow(c telebot.Context) error {
 		return c.Send("خطا در بارگذاری اطلاعات حساب کاربری.")
 	}
 
+	if bot.XUIClient == nil {
+		return maybeEditOrSend(c, "⚠️ ارتباط با سرور سرویس‌دهنده موقتاً قطع است. لطفاً دقایقی دیگر مجدداً تلاش فرمایید.")
+	}
+
 	plans, err := db.GetPaidPlansForUser(context.Background(), user.ID, false)
 	if err != nil {
 		return c.Send("خطا در بارگذاری طرح‌های خرید.")
@@ -482,7 +486,10 @@ func ProcessBuyCustomName(c telebot.Context, customName string) error {
 		DataGB:       dataGB,
 		OperationKey: opKey,
 	})
-	_ = pricing.SaveQuote(context.Background(), quote)
+	if err := pricing.SaveQuote(context.Background(), quote); err != nil {
+		log.Printf("[ERROR] failed to persist quote for user %d: %v", user.ID, err)
+		return c.Send("خطا در ایجاد پیش‌فاکتور خرید. لطفا مجددا تلاش کنید.")
+	}
 
 	bot.FSM.SetState(user.TelegramID, "awaiting_buy_confirm", map[string]interface{}{
 		"plan_id":         fmt.Sprintf("%d", plan.ID),
@@ -579,7 +586,10 @@ func HandleBuyAutoName(c telebot.Context) error {
 		DataGB:       dataGB,
 		OperationKey: opKey,
 	})
-	_ = pricing.SaveQuote(context.Background(), quote)
+	if err := pricing.SaveQuote(context.Background(), quote); err != nil {
+		log.Printf("[ERROR] failed to persist quote for user %d: %v", user.ID, err)
+		return c.Send("خطا در ایجاد پیش‌فاکتور خرید. لطفا مجددا تلاش کنید.")
+	}
 
 	bot.FSM.SetState(user.TelegramID, "awaiting_buy_confirm", map[string]interface{}{
 		"plan_id":         fmt.Sprintf("%d", plan.ID),
@@ -678,34 +688,32 @@ func HandleBuyConfirm(c telebot.Context) error {
 		return c.Send("این نام اشتراک در همین حین توسط شخص دیگری گرفته شد. لطفا فرآیند خرید را مجددا شروع کنید.")
 	}
 
-	var quoteID *int64
+	var quote *pricing.PurchaseQuote
+	var quoteErr error
 	if qIDStr, ok := state.Data["quote_id"]; ok && qIDStr != "" {
 		if qID, err := strconv.ParseInt(fmt.Sprintf("%v", qIDStr), 10, 64); err == nil && qID > 0 {
-			quoteID = &qID
+			quote, quoteErr = pricing.GetQuoteByID(context.Background(), qID)
 		}
 	}
-	var priceToman int64
-	if ptStr, ok := state.Data["price_toman"]; ok && ptStr != "" {
-		priceToman, _ = strconv.ParseInt(fmt.Sprintf("%v", ptStr), 10, 64)
-	}
-	if priceToman <= 0 {
-		quote := pricing.CalculateQuote(pricing.QuoteParams{
-			UserID:       user.ID,
-			Plan:         plan,
-			Months:       months,
-			IPLimit:      ipLimit,
-			DataGB:       dataGB,
-			OperationKey: operationKey,
-		})
-		if quote != nil {
-			priceToman = quote.FinalPriceToman
-			if quoteID == nil {
-				_ = pricing.SaveQuote(context.Background(), quote)
-				if quote.ID > 0 {
-					quoteID = &quote.ID
-				}
-			}
+	if quote == nil && quoteErr == nil {
+		if quoteKey := fmt.Sprintf("%v", state.Data["quote_key"]); quoteKey != "" {
+			quote, quoteErr = pricing.GetQuoteByKey(context.Background(), quoteKey)
 		}
+	}
+	if quoteErr != nil || quote == nil {
+		log.Printf("[ERROR] valid quote not found in db for user %d (err: %v)", user.ID, quoteErr)
+		return c.Send("پیش‌فاکتور معتبر یافت نشد. لطفا فرآیند خرید را مجددا شروع کنید.")
+	}
+	if quote.UserID != user.ID {
+		log.Printf("[SECURITY] quote %d belongs to user %d, but user %d attempted to confirm", quote.ID, quote.UserID, user.ID)
+		return c.Send("پیش‌فاکتور متعلق به شما نیست.")
+	}
+
+	priceToman := quote.FinalPriceToman
+	quoteID := &quote.ID
+
+	if bot.XUIClient == nil {
+		return c.Send("⚠️ ارتباط با سرور سرویس‌دهنده موقتاً قطع است. لطفاً دقایقی دیگر مجدداً تلاش فرمایید.")
 	}
 
 	if err := db.DebitWalletBalanceWithKey(context.Background(), user.ID, float64(priceToman), "subscription purchase: "+email, operationKey); err != nil {

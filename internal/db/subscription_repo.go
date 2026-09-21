@@ -79,6 +79,10 @@ func GetSubscriptionByID(ctx context.Context, id int) (*Subscription, error) {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
+	if Pool == nil {
+		return nil, errors.New("database pool is not initialized")
+	}
+
 	row := Pool.QueryRow(ctx, subscriptionSelect()+` WHERE id = $1`, id)
 	s, err := scanSubscriptionRow(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -91,6 +95,10 @@ func GetSubscriptionByEmail(ctx context.Context, email string) (*Subscription, e
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
+	if Pool == nil {
+		return nil, errors.New("database pool is not initialized")
+	}
+
 	row := Pool.QueryRow(ctx, subscriptionSelect()+` WHERE client_email = $1`, email)
 	s, err := scanSubscriptionRow(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -102,6 +110,10 @@ func GetSubscriptionByEmail(ctx context.Context, email string) (*Subscription, e
 func CreateSubscription(ctx context.Context, s *Subscription) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
+
+	if Pool == nil {
+		return errors.New("database pool is not initialized")
+	}
 
 	if s.Status == "" {
 		s.Status = "active"
@@ -137,6 +149,10 @@ func UpdateSubscriptionStatus(ctx context.Context, id int, status string) error 
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
+	if Pool == nil {
+		return errors.New("database pool is not initialized")
+	}
+
 	isActive := status == "active"
 	_, err := Pool.Exec(ctx, `UPDATE subscriptions SET status = $1, is_active = $2, updated_at = NOW() WHERE id = $3`, status, isActive, id)
 	return err
@@ -145,6 +161,10 @@ func UpdateSubscriptionStatus(ctx context.Context, id int, status string) error 
 func UpdateSubscription(ctx context.Context, s *Subscription) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
+
+	if Pool == nil {
+		return errors.New("database pool is not initialized")
+	}
 
 	if s.EndDate.IsZero() && s.ExpireTime != nil && *s.ExpireTime > 0 {
 		s.EndDate = time.UnixMilli(*s.ExpireTime)
@@ -167,6 +187,10 @@ func MarkSubscriptionReconciliationRequired(ctx context.Context, id int, desired
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
 
+	if Pool == nil {
+		return errors.New("database pool is not initialized")
+	}
+
 	_, err := Pool.Exec(ctx, `
 		UPDATE subscriptions
 		SET status = $1, desired_ip_limit = $2, desired_expire_time = $3,
@@ -179,6 +203,10 @@ func MarkSubscriptionReconciliationRequired(ctx context.Context, id int, desired
 func DeleteSubscription(ctx context.Context, id int) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
+
+	if Pool == nil {
+		return errors.New("database pool is not initialized")
+	}
 
 	_, err := Pool.Exec(ctx, `UPDATE subscriptions SET status = 'deleted', is_active = FALSE, end_date = COALESCE(end_date, NOW()), updated_at = NOW() WHERE id = $1`, id)
 	return err
