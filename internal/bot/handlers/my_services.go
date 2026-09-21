@@ -60,7 +60,7 @@ func showServicesPage(c telebot.Context, page int) error {
 	if user == nil {
 		return c.Send("خطا در بارگذاری حساب کاربری.")
 	}
-	subs, err := db.GetSubscriptionsByUserID(context.Background(), user.ID)
+	subs, err := db.GetManageableSubscriptionsByUserID(context.Background(), user.ID)
 	if err != nil {
 		return c.Send("خطا در بارگذاری اشتراک‌ها.")
 	}
@@ -71,13 +71,6 @@ func showServicesPage(c telebot.Context, page int) error {
 		}
 	}
 	subs = paidSubs
-
-	if bot.XUIClient != nil {
-		clients, err := bot.XUIClient.ListClients()
-		if err == nil {
-			subs = reconcileServicesPageSubscriptions(subs, clients)
-		}
-	}
 
 	if len(subs) == 0 {
 		menu := &telebot.ReplyMarkup{}
@@ -378,7 +371,7 @@ func HandleSubscriptionLimitMenu(c telebot.Context) error {
 
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
-		currency = "IRR"
+		currency = "تومان"
 	}
 	menu := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
@@ -425,7 +418,7 @@ func HandleSubscriptionLimitConfirmPrompt(c telebot.Context) error {
 	cost := float64(newLimit-displayIPLimit) * plan.PricePerExtraIP * float64(months)
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
-		currency = "IRR"
+		currency = "تومان"
 	}
 	operationToken := newOperationToken()
 	operationKey := operationKeyFromToken("wallet_upgrade_ip", operationToken)
@@ -486,7 +479,7 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 	cost := float64(newLimit-displayIPLimit) * plan.PricePerExtraIP * float64(months)
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
-		currency = "IRR"
+		currency = "تومان"
 	}
 
 	operationKey := ""
@@ -593,7 +586,7 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 	desc, _ := db.GetSetting(context.Background(), "topup_description")
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
-		currency = "IRR"
+		currency = "تومان"
 	}
 
 	// Change state to awaiting_purchase_receipt with IP upgrade metadata
@@ -643,7 +636,7 @@ func HandleSubscriptionExtendMenu(c telebot.Context) error {
 	}
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
-		currency = "IRR"
+		currency = "تومان"
 	}
 
 	displayIPLimit := sub.IPLimit
@@ -745,7 +738,7 @@ func showExtendConfirmation(c telebot.Context, user *db.User, subID int, months 
 	cost := calculatePaidPrice(plan, months, displayIPLimit, dataGB)
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
-		currency = "IRR"
+		currency = "تومان"
 	}
 
 	operationToken := newOperationToken()
@@ -809,7 +802,7 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 	cost := calculatePaidPrice(plan, months, displayIPLimit, dataGB)
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
-		currency = "IRR"
+		currency = "تومان"
 	}
 	operationKey := ""
 	if state := bot.FSM.GetState(user.TelegramID); state != nil {
@@ -940,7 +933,7 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 	desc, _ := db.GetSetting(context.Background(), "topup_description")
 	currency, _ := db.GetSetting(context.Background(), "currency_name")
 	if currency == "" {
-		currency = "IRR"
+		currency = "تومان"
 	}
 
 	// Change state to awaiting_purchase_receipt with Extend metadata

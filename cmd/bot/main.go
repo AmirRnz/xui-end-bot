@@ -13,6 +13,9 @@ import (
 	"xui-end-bot/internal/config"
 	"xui-end-bot/internal/db"
 	"xui-end-bot/internal/scheduler"
+	"xui-end-bot/internal/services/outbox"
+	"xui-end-bot/internal/services/reconcile"
+	"xui-end-bot/internal/services/sync"
 	"xui-end-bot/internal/xui"
 )
 
@@ -43,6 +46,18 @@ func main() {
 		log.Fatalf("XUI Client initialization error: %v", err)
 	}
 
+	if status, err := xuiClient.CheckReadiness(ctx); err != nil {
+		log.Printf("Warning: 3x-ui readiness check returned error: %v", err)
+	} else {
+		log.Printf("3x-ui readiness check succeeded: version=%s, inbounds=%d", status.Version, status.InboundsCount)
+	}
+
+	reconcileProcessor := reconcile.NewProcessor("end_bot_reconciler", xuiClient)
+	reconcileProcessor.Start(ctx, 30*time.Second)
+
+	syncWorker := sync.NewSyncWorker(xuiClient, 5*time.Minute)
+	syncWorker.Start(ctx)
+
 	cache := xui.NewInboundCache(xuiClient, 5*time.Minute)
 	xuiClient.Cache = cache
 	cache.Start()
@@ -51,6 +66,9 @@ func main() {
 	scheduler.Start(ctx, cfg)
 
 	bot.Start(&cfg.Bot, xuiClient)
+
+	outboxWorker := outbox.NewWorker(bot.Bot)
+	outboxWorker.Start(ctx, 15*time.Second)
 
 	auth := bot.AuthMiddleware()
 	admin := bot.AdminMiddleware(&cfg.Admin)
@@ -77,4 +95,3 @@ func main() {
 		bot.Bot.Stop()
 	}
 }
-

@@ -158,4 +158,3 @@ func isConfiguredAdmin(id int64) bool {
 	}
 	return false
 }
-

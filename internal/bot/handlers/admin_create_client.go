@@ -130,8 +130,8 @@ func HandleAdminCreateClientMenu(c telebot.Context) error {
 
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
-		menu.Row(menu.Data("💼 طرح آماده (Paid Plan)", "admin_create_plan_paid")),
-		menu.Row(menu.Data("⚙️ طرح دلخواه (Custom Plan)", "admin_create_plan_custom")),
+		menu.Row(menu.Data("💼 طرح آماده", "admin_create_plan_paid")),
+		menu.Row(menu.Data("⚙️ طرح دلخواه", "admin_create_plan_custom")),
 		menu.Row(menu.Data("« بازگشت به پنل", "admin_menu")),
 	)
 
@@ -210,7 +210,7 @@ func HandleAdminCreateCustomPlan(c telebot.Context) error {
 
 	draft := map[string]interface{}{
 		"mode":        "custom",
-		"plan_name":   "Custom Plan",
+		"plan_name":   "طرح سفارشی",
 		"inbound_ids": []int{},
 		"is_limited":  false,
 		"data_gb":     int64(0),
@@ -703,7 +703,7 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 	flow := draftGetString(draft, "flow")
 	planName := draftGetString(draft, "plan_name")
 	if planName == "" {
-		planName = "Admin Custom Plan"
+		planName = "طرح سفارشی ادمین"
 	}
 	planID := draftGetInt64(draft, "plan_id")
 	var planIDPtr *int

@@ -416,8 +416,6 @@ func CreatePlan(ctx context.Context, p *Plan) error {
 	return nil
 }
 
-
-
 func scanTestPlanRows(rows pgx.Rows) (*TestPlan, error) {
 	var inboundJSON []byte
 	p := &TestPlan{}
