@@ -56,10 +56,11 @@ const (
 )
 
 type ProcessOutcome struct {
-	Kind       OutcomeKind
-	Resolution string
-	Reason     string
-	Err        error
+	Kind         OutcomeKind
+	TargetStatus string
+	Resolution   string
+	Reason       string
+	Err          error
 }
 
 type Processor struct {
@@ -166,10 +167,14 @@ func (p *Processor) processRecord(ctx context.Context, rec *db.ReconciliationRec
 
 	switch outcome.Kind {
 	case OutcomeResolved:
-		if err := db.ResolveReconciliationRecord(ctx, rec.ID, p.WorkerID, rec.Status, outcome.Resolution); err != nil {
-			log.Printf("[RECONCILE] Failed to mark record %d resolved: %v", rec.ID, err)
+		targetStatus := outcome.TargetStatus
+		if targetStatus == "" {
+			targetStatus = db.ReconciliationStatusResolvedVerified
+		}
+		if err := db.ResolveReconciliationRecordWithStatus(ctx, rec.ID, p.WorkerID, rec.Status, targetStatus, outcome.Resolution); err != nil {
+			log.Printf("[RECONCILE] Failed to mark record %d %s: %v", rec.ID, targetStatus, err)
 		} else {
-			log.Printf("[RECONCILE] Resolved record %d (op=%s, kind=%s): %s", rec.ID, rec.OperationKey, rec.Kind, outcome.Resolution)
+			log.Printf("[RECONCILE] Resolved record %d (op=%s, kind=%s) -> %s: %s", rec.ID, rec.OperationKey, rec.Kind, targetStatus, outcome.Resolution)
 		}
 
 	case OutcomeManualReview:
@@ -241,8 +246,9 @@ func (p *Processor) handlePendingRefund(ctx context.Context, rec *db.Reconciliat
 		}
 	}
 	return ProcessOutcome{
-		Kind:       OutcomeResolved,
-		Resolution: fmt.Sprintf("wallet refunded %d Toman (key: %s)", payload.Amount, payload.OperationKey),
+		Kind:         OutcomeResolved,
+		TargetStatus: db.ReconciliationStatusResolved,
+		Resolution:   fmt.Sprintf("wallet refunded %d Toman (key: %s)", payload.Amount, payload.OperationKey),
 	}
 }
 
@@ -365,8 +371,9 @@ func (p *Processor) handlePurchaseReconciliation(ctx context.Context, rec *db.Re
 				}
 			}
 			return ProcessOutcome{
-				Kind:       OutcomeResolved,
-				Resolution: fmt.Sprintf("remote client %s and verified subscription %d both exist", payload.Email, existing.ID),
+				Kind:         OutcomeResolved,
+				TargetStatus: db.ReconciliationStatusResolvedVerified,
+				Resolution:   fmt.Sprintf("remote client %s and verified subscription %d both exist", payload.Email, existing.ID),
 			}
 		}
 
@@ -410,8 +417,9 @@ func (p *Processor) handlePurchaseReconciliation(ctx context.Context, rec *db.Re
 			}
 		}
 		return ProcessOutcome{
-			Kind:       OutcomeResolved,
-			Resolution: fmt.Sprintf("remote client %s confirmed, safely adopted into subscription %d", payload.Email, sub.ID),
+			Kind:         OutcomeResolved,
+			TargetStatus: db.ReconciliationStatusResolvedVerified,
+			Resolution:   fmt.Sprintf("remote client %s confirmed, safely adopted into subscription %d", payload.Email, sub.ID),
 		}
 
 	case RemoteConfirmedAbsent:
@@ -465,8 +473,9 @@ func (p *Processor) handlePurchaseReconciliation(ctx context.Context, rec *db.Re
 			}
 			// Zero price and no debit: safely resolve without refund
 			return ProcessOutcome{
-				Kind:       OutcomeResolved,
-				Resolution: fmt.Sprintf("remote client %s absent, zero price and no debit recorded; resolved without refund", payload.Email),
+				Kind:         OutcomeResolved,
+				TargetStatus: db.ReconciliationStatusResolved,
+				Resolution:   fmt.Sprintf("remote client %s absent, zero price and no debit recorded; resolved without refund", payload.Email),
 			}
 		}
 
@@ -490,8 +499,9 @@ func (p *Processor) handlePurchaseReconciliation(ctx context.Context, rec *db.Re
 			}
 		}
 		return ProcessOutcome{
-			Kind:       OutcomeResolved,
-			Resolution: fmt.Sprintf("remote client absent, refunded %d Toman (key: %s)", refundAmount, refundOpKey),
+			Kind:         OutcomeResolved,
+			TargetStatus: db.ReconciliationStatusResolved,
+			Resolution:   fmt.Sprintf("remote client absent, refunded %d Toman (key: %s)", refundAmount, refundOpKey),
 		}
 
 	default: // RemotePresenceUnknown
@@ -546,8 +556,9 @@ func (p *Processor) handleDeleteReconciliation(ctx context.Context, rec *db.Reco
 		}
 		// Step 4: Resolve.
 		return ProcessOutcome{
-			Kind:       OutcomeResolved,
-			Resolution: fmt.Sprintf("remote client %s confirmed deleted, local record cleaned", payload.ClientEmail),
+			Kind:         OutcomeResolved,
+			TargetStatus: db.ReconciliationStatusResolved,
+			Resolution:   fmt.Sprintf("remote client %s confirmed deleted, local record cleaned", payload.ClientEmail),
 		}
 
 	case RemoteConfirmedPresent:
@@ -572,8 +583,9 @@ func (p *Processor) handleDeleteReconciliation(ctx context.Context, rec *db.Reco
 				}
 			}
 			return ProcessOutcome{
-				Kind:       OutcomeResolved,
-				Resolution: fmt.Sprintf("remote client %s deleted on retry", payload.ClientEmail),
+				Kind:         OutcomeResolved,
+				TargetStatus: db.ReconciliationStatusResolved,
+				Resolution:   fmt.Sprintf("remote client %s deleted on retry", payload.ClientEmail),
 			}
 		}
 		return ProcessOutcome{
@@ -665,8 +677,9 @@ func (p *Processor) handleUpdateReconciliation(ctx context.Context, rec *db.Reco
 			}
 		}
 		return ProcessOutcome{
-			Kind:       OutcomeResolved,
-			Resolution: fmt.Sprintf("subscription %d db state updated to match remote", sub.ID),
+			Kind:         OutcomeResolved,
+			TargetStatus: db.ReconciliationStatusResolvedVerified,
+			Resolution:   fmt.Sprintf("subscription %d db state updated to match remote", sub.ID),
 		}
 	}
 
@@ -711,8 +724,9 @@ func (p *Processor) handleUpdateReconciliation(ctx context.Context, rec *db.Reco
 					}
 				}
 				return ProcessOutcome{
-					Kind:       OutcomeResolved,
-					Resolution: fmt.Sprintf("retried remote update for %s and verified readback", payload.ClientEmail),
+					Kind:         OutcomeResolved,
+					TargetStatus: db.ReconciliationStatusResolvedVerified,
+					Resolution:   fmt.Sprintf("retried remote update for %s and verified readback", payload.ClientEmail),
 				}
 			}
 		}
@@ -761,15 +775,17 @@ func (p *Processor) handleDirectPaymentProvisioning(ctx context.Context, rec *db
 	}
 	if req.ProvisioningStatus == db.PurchaseProvisioningSucceeded {
 		return ProcessOutcome{
-			Kind:       OutcomeResolved,
-			Resolution: "already provisioned successfully",
+			Kind:         OutcomeResolved,
+			TargetStatus: db.ReconciliationStatusResolved,
+			Resolution:   "already provisioned successfully",
 		}
 	}
 	if req.Status != "approved" {
 		if req.Status == "rejected" || req.Status == "cancelled" {
 			return ProcessOutcome{
-				Kind:       OutcomeResolved,
-				Resolution: fmt.Sprintf("purchase request %d %s; provisioning superseded", payload.PurchaseRequestID, req.Status),
+				Kind:         OutcomeResolved,
+				TargetStatus: db.ReconciliationStatusSuperseded,
+				Resolution:   fmt.Sprintf("purchase request %d %s; provisioning superseded", payload.PurchaseRequestID, req.Status),
 			}
 		}
 		return ProcessOutcome{
@@ -851,8 +867,9 @@ func (p *Processor) handleDirectPaymentProvisioning(ctx context.Context, rec *db
 			}
 		}
 		return ProcessOutcome{
-			Kind:       OutcomeResolved,
-			Resolution: fmt.Sprintf("direct payment client %s confirmed, adopted into subscription", payload.ClientEmail),
+			Kind:         OutcomeResolved,
+			TargetStatus: db.ReconciliationStatusResolvedVerified,
+			Resolution:   fmt.Sprintf("direct payment client %s confirmed, adopted into subscription", payload.ClientEmail),
 		}
 
 	case RemoteConfirmedAbsent:
@@ -946,8 +963,9 @@ func (p *Processor) handleDirectPaymentProvisioning(ctx context.Context, rec *db
 			}
 		}
 		return ProcessOutcome{
-			Kind:       OutcomeResolved,
-			Resolution: fmt.Sprintf("direct payment client %s created and provisioned successfully", payload.ClientEmail),
+			Kind:         OutcomeResolved,
+			TargetStatus: db.ReconciliationStatusResolved,
+			Resolution:   fmt.Sprintf("direct payment client %s created and provisioned successfully", payload.ClientEmail),
 		}
 
 	default: // RemotePresenceUnknown

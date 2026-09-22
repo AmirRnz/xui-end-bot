@@ -740,7 +740,8 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 					Status:     db.UserStatusApproved,
 				}
 				if err := db.CreateUser(ctx, targetUser); err != nil {
-					report.WriteString(fmt.Sprintf("❌ **%s** (%d): خطا در ایجاد کاربر در دیتابیس (%v)\n\n", cust.Name, cust.TelegramID, err))
+					log.Printf("[ERROR] Failed to create user %d (%s) in database: %v", cust.TelegramID, cust.Name, err)
+					report.WriteString(fmt.Sprintf("❌ **%s** (%d): خطا در ایجاد کاربر در پایگاه داده\n\n", cust.Name, cust.TelegramID))
 					continue
 				}
 			}
@@ -758,7 +759,8 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 					Status:     db.UserStatusApproved,
 				}
 				if err := db.CreateUser(ctx, targetUser); err != nil {
-					report.WriteString(fmt.Sprintf("❌ **%s** (@%s): خطا در ایجاد کاربر در دیتابیس (%v)\n\n", cust.Name, cust.Username, err))
+					log.Printf("[ERROR] Failed to create user @%s (%s) in database: %v", cust.Username, cust.Name, err)
+					report.WriteString(fmt.Sprintf("❌ **%s** (@%s): خطا در ایجاد کاربر در پایگاه داده\n\n", cust.Name, cust.Username))
 					continue
 				}
 			}
@@ -789,7 +791,8 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 			}
 		}
 		if err != nil {
-			report.WriteString(fmt.Sprintf("❌ **%s**: خطا در اضافه کردن کلاینت به پنل 3x-ui (%v)\n\n", cust.Name, err))
+			log.Printf("[ERROR] Failed to add client %s to 3x-ui panel: %v", email, err)
+			report.WriteString(fmt.Sprintf("❌ **%s**: خطا در ایجاد کلاینت در پنل 3x-ui\n\n", cust.Name))
 			continue
 		}
 
