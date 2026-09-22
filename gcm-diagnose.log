@@ -1,0 +1,192 @@
+﻿Diagnose log at 2026-09-22T17:02:31Z
+
+AppPath: C:\Program Files\Git\mingw64\bin\git-credential-manager.exe
+InstallDir: C:\Program Files\Git\mingw64\bin\
+Version: 2.7.3+5fa7116896c82164996a609accd1c5ad90fe730a
+
+------------
+Diagnostic: Environment
+Skipped: False
+Success: True
+Exception: None
+Log:
+OSType: Windows
+OSVersion: 10.0 (build 26200)
+Reading environment variables... OK
+ Variables:
+SystemDrive=C:
+ProgramFiles(x86)=C:\Program Files (x86)
+MSYSTEM=MINGW64
+AGY_BROWSER_ACTIVE_PORT_FILE=C:\Users\codexplus\AppData\Roaming\Antigravity\DevToolsActivePort
+PROCESSOR_IDENTIFIER=AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD
+TMP=C:\Users\CODEXP~1\AppData\Local\Temp
+PROCESSOR_ARCHITECTURE=AMD64
+PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL
+USERDOMAIN=DESKTOP-V09E2IG
+PROCESSOR_REVISION=2100
+ANTIGRAVITY_SOURCE_METADATA={"tool":{"conversationId":"a6d9f590-7fdc-4529-b079-257e453dced8", "stepIndex":1212, "toolCall":{"id":"call_455521", "name":"run_command", "argumentsJson":"{\"CommandLine\":\"git credential-manager diagnose\",\"Cwd\":\"c:\\\\projects\\\\VPNS\\\\telegram bots\\\\xui-end-bot\",\"WaitMsBeforeAsync\":5000,\"toolAction\":\"Run git credential-manager diagnose\",\"toolSummary\":\"Diagnose git credential manager\"}", "thinkingSignature":"ErQCCrECAWkUfRMoT9ddWf5vkdxqGL0SosJ38IzxyTVHrmkZeNZoTwz0dE6VHF/FEIiJMQh8b9V+xAW4W62SeHmcxIOLfhSDxy7UpvKNOBYWAlk6Gt2q8az4UJPSecTfEZPCb9u7YoOIzlwjyHiB3mQzuNjWqorBksqNKXdxjZ4cXvps+mgEN8dq0qpknvWfY4Z6986i0umeadxRftNLEbszYEhu6sGPHUpuLvLSjjrM5udsxVJ2jIVQTqYa9mAGV5jxYTufFhRgzut81uWUf9wkngD9VV/jXu1LU86bZb/oxx6nhSW5WfHHFAMHL8IccWEZ8mQiiSMNrPfJUhgcySjxuUqQdq2REb+6/2JUyCjDEJ0/V5D0rZLCBIgko0skgI89/K9ubsU4dG84msbieAW6D4YfA44="}}}
+TEMP=C:\Users\CODEXP~1\AppData\Local\Temp
+USERPROFILE=C:\Users\codexplus
+ProgramW6432=C:\Program Files
+TERM=xterm-256color
+USERNAME=codexplus
+SystemRoot=C:\WINDOWS
+AGY_BROWSER_WS_URL=ws://127.0.0.1:62492/devtools/browser/58eed259-5ac7-4a8b-bc77-c1677b62ba9a
+PLINK_PROTOCOL=ssh
+PATH=C:/Program Files/Git/mingw64/libexec/git-core;C:\Program Files\Git\mingw64\bin;C:\Program Files\Git\usr\bin;C:\Users\codexplus\bin;C:/Users/codexplus/.gemini/antigravity/bin;C:\Users\codexplus\AppData\Roaming\Antigravity\bin;C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\Git\cmd;C:\Program Files\Microsoft VS Code\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\cursor\resources\app\bin;C:\Program Files\Go\bin;C:\Program Files\WireGuard\;C:\Users\codexplus\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\codexplus\AppData\Local\Programs\Python\Python311\;C:\Users\codexplus\.cargo\bin;C:\Users\codexplus\AppData\Local\Microsoft\WindowsApps
+OneDrive=C:\Users\codexplus\OneDrive
+ALLUSERSPROFILE=C:\ProgramData
+CommonProgramFiles=C:\Program Files\Common Files
+ANTIGRAVITY_TRAJECTORY_ID=aad43007-78df-4230-b5a6-8f0096ec99ce
+ANTIGRAVITY_LS_ADDRESS=localhost:54204
+ProgramData=C:\ProgramData
+LC_CTYPE=C.UTF-8
+HOMEPATH=\WINDOWS\system32
+COMPUTERNAME=DESKTOP-V09E2IG
+ANTIGRAVITY_AGENT=1
+CommonProgramW6432=C:\Program Files\Common Files
+GIT_EXEC_PATH=C:/Program Files/Git/mingw64/libexec/git-core
+DriverData=C:\Windows\System32\Drivers\DriverData
+HOMEDRIVE=C:
+windir=C:\WINDOWS
+GIT_TRACE2_PARENT_SID=5d1f8e67-9df4-4592-8d3d-ec13e739af29
+NUMBER_OF_PROCESSORS=12
+OS=Windows_NT
+ProgramFiles=C:\Program Files
+ComSpec=C:\WINDOWS\system32\cmd.exe
+CHROME_DEVTOOLS_MCP_JS=C:\Users\renz\AppData\Local\Programs\Antigravity\resources\app.asar.unpacked\node_modules\chrome-devtools-mcp\build\src\bin\chrome-devtools-mcp.js
+HOME=C:\Users\codexplus
+PSModulePath=C:\Users\codexplus\Documents\WindowsPowerShell\Modules;C:\Program Files\WindowsPowerShell\Modules;C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules
+ANTIGRAVITY_CSRF_TOKEN=bde8b683-f942-40dc-95bf-ee0d5fd1222a
+ANTIGRAVITY_CONVERSATION_ID=a6d9f590-7fdc-4529-b079-257e453dced8
+TMPDIR=C:\Users\CODEXP~1\AppData\Local\Temp
+APPDATA=C:\Users\codexplus\AppData\Roaming
+ANTIGRAVITY_PROJECT_ID=ab1ee05d-2875-48e2-9ce4-ddf6a24c1ad9
+PROCESSOR_LEVEL=25
+LOCALAPPDATA=C:\Users\codexplus\AppData\Local
+ANTIGRAVITY_AGENTAPI_EXE=C:\Users\renz\AppData\Local\Programs\Antigravity\resources\bin\language_server.exe
+CommonProgramFiles(x86)=C:\Program Files (x86)\Common Files
+COLORTERM=truecolor
+PUBLIC=C:\Users\Public
+ANTIGRAVITY_LS_VERSION=hub-2.15.1
+
+
+------------
+Diagnostic: File system
+Skipped: False
+Success: True
+Exception: None
+Log:
+Temporary directory is 'C:\Users\codexplus\AppData\Local\Temp\'...
+Checking basic file I/O...
+Writing to temporary file 'C:\Users\codexplus\AppData\Local\Temp\ff304d248e0421448f2081e0'... OK
+Reading from temporary file 'C:\Users\codexplus\AppData\Local\Temp\ff304d248e0421448f2081e0'... OK
+Deleting temporary file 'C:\Users\codexplus\AppData\Local\Temp\ff304d248e0421448f2081e0'... OK
+Testing IFileSystem instance...
+UserHomePath: C:\Users\codexplus
+UserDataDirectoryPath: C:\Users\codexplus\.gcm
+GetCurrentDirectory(): C:\projects\VPNS\telegram bots\xui-end-bot
+
+------------
+Diagnostic: Networking
+Skipped: False
+Success: True
+Exception: None
+Log:
+Checking networking and HTTP stack...
+Creating HTTP client... OK
+IsNetworkAvailable: True
+Sending HEAD request to http://example.com...Sending HEAD request to https://example.com... OK
+ OK
+Acquiring free TCP port... OK
+Testing local HTTP loopback connections...
+Creating new HTTP listener for http://localhost:62680/... OK
+Waiting for loopback connection... OK
+Writing response... OK
+Waiting for response data... OK
+Loopback connection data OK
+
+------------
+Diagnostic: Git
+Skipped: False
+Success: True
+Exception: None
+Log:
+Getting Git version... OK
+Git version is '2.53.0.windows.2'
+Locating current repository...Git repository at 'C:/projects/VPNS/telegram bots/xui-end-bot/.git'
+ OK
+Listing all Git configuration... OK
+Git configuration:
+file:C:/Program Files/Git/etc/gitconfig	diff.astextplain.textconv=astextplain
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.process=git-lfs filter-process
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.required=true
+file:C:/Program Files/Git/etc/gitconfig	http.sslbackend=schannel
+file:C:/Program Files/Git/etc/gitconfig	core.autocrlf=true
+file:C:/Program Files/Git/etc/gitconfig	core.fscache=true
+file:C:/Program Files/Git/etc/gitconfig	core.symlinks=false
+file:C:/Program Files/Git/etc/gitconfig	pull.rebase=false
+file:C:/Program Files/Git/etc/gitconfig	credential.helper=manager
+file:C:/Program Files/Git/etc/gitconfig	credential.https://dev.azure.com.usehttppath=true
+file:C:/Program Files/Git/etc/gitconfig	init.defaultbranch=master
+file:C:/Users/codexplus/.gitconfig	safe.directory=C:/projects/mus/muscol
+file:C:/Users/codexplus/.gitconfig	safe.directory=C:/projects/x-ui-co-bot
+file:C:/Users/codexplus/.gitconfig	safe.directory=C:/projects/xui-end-bot
+file:C:/Users/codexplus/.gitconfig	safe.directory=C:/projects/3x-ui
+file:C:/Users/codexplus/.gitconfig	safe.directory=C:/projects/TeyTunes
+file:C:/Users/codexplus/.gitconfig	safe.directory=C:/projects/VPNS/telegram bots/xui-end-bot
+file:C:/Users/codexplus/.gitconfig	safe.directory=C:/projects/VPNS/telegram bots/xui-resell-bot
+file:.git/config	core.repositoryformatversion=0
+file:.git/config	core.filemode=false
+file:.git/config	core.bare=false
+file:.git/config	core.logallrefupdates=true
+file:.git/config	core.symlinks=false
+file:.git/config	core.ignorecase=true
+file:.git/config	remote.origin.url=https://github.com/AmirRnz/xui-end-bot.git
+file:.git/config	remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
+file:.git/config	branch.main.remote=origin
+file:.git/config	branch.main.merge=refs/heads/main
+file:.git/config	branch.main.vscode-merge-base=origin/main
+file:.git/config	remote.reseller.url=c:\projects\x-ui-co-bot
+file:.git/config	remote.reseller.fetch=+refs/heads/*:refs/remotes/reseller/*
+file:.git/config	user.name=AmirRnz
+file:.git/config	user.email=amirezanmt@gmail.com
+
+
+------------
+Diagnostic: Credential storage
+Skipped: False
+Success: True
+Exception: None
+Log:
+ICredentialStore instance is of type: CredentialStore
+Writing test credential... OK
+Reading test credential... OK
+Deleting test credential... OK
+
+------------
+Diagnostic: Microsoft authentication (AAD/MSA)
+Skipped: False
+Success: True
+Exception: None
+Log:
+Broker is not enabled.
+Flow type is: Auto
+Gathering MSAL token cache data... OK
+CacheDirectory: C:\Users\codexplus\AppData\Local\.IdentityService
+CacheFileName: msal.cache
+CacheFilePath: C:\Users\codexplus\AppData\Local\.IdentityService\msal.cache
+Creating cache helper... OK
+Verifying MSAL token cache persistence... OK
+
+------------
+Diagnostic: GitHub API
+Skipped: False
+Success: True
+Exception: None
+Log:
+Using 'https://github.com/' as API target.
+Querying '/meta' endpoint... OK
+
