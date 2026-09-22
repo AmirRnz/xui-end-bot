@@ -899,10 +899,14 @@ func HandleBuyDirectPayment(c telebot.Context) error {
 		ProvisioningSnapshot: state.Data,
 		Status:               db.IntentStatusAwaitingReceipt,
 	}
-	if _, err := db.CreatePaymentIntent(context.Background(), intent); err != nil {
+	createdIntent, err := db.CreatePaymentIntent(context.Background(), intent)
+	if err != nil {
 		log.Printf("[INTENT] Failed to create payment intent for user %d: %v", user.ID, err)
+		return maybeEditOrSend(c, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
 	}
 
+	state.Data["intent_id"] = createdIntent.ID
+	state.Data["operation_token"] = createdIntent.IntentToken
 	// Change state step to awaiting_purchase_receipt so HandleReceiptPhoto will catch it
 	bot.FSM.SetState(user.TelegramID, "awaiting_purchase_receipt", state.Data)
 

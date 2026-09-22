@@ -615,14 +615,18 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 		ProvisioningSnapshot: fsmData,
 		Status:               db.IntentStatusAwaitingReceipt,
 	}
-	if _, err := db.CreatePaymentIntent(context.Background(), intent); err != nil {
+	createdIntent, err := db.CreatePaymentIntent(context.Background(), intent)
+	if err != nil {
 		log.Printf("[INTENT] Failed to create payment intent for user %d IP upgrade: %v", user.ID, err)
+		return maybeEditOrSend(c, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
 	}
+	fsmData["intent_id"] = createdIntent.ID
+	fsmData["operation_token"] = createdIntent.IntentToken
 	bot.FSM.SetState(user.TelegramID, "awaiting_purchase_receipt", fsmData)
 
 	var text strings.Builder
 	text.WriteString("💳 **پرداخت مستقیم برای ارتقای تعداد کاربران همزمان**\n\n")
-	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%.0f %s**\n\n", cost, currency))
+	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%s**\n\n", persian.FormatMoney(int64(cost))))
 	if card != "" {
 		text.WriteString(fmt.Sprintf("شماره کارت جهت واریز:\n`%s`\n", card))
 	}
@@ -980,14 +984,18 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 		ProvisioningSnapshot: extendData,
 		Status:               db.IntentStatusAwaitingReceipt,
 	}
-	if _, err := db.CreatePaymentIntent(context.Background(), extendIntent); err != nil {
+	createdIntent, err := db.CreatePaymentIntent(context.Background(), extendIntent)
+	if err != nil {
 		log.Printf("[INTENT] Failed to create payment intent for user %d extend: %v", user.ID, err)
+		return maybeEditOrSend(c, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
 	}
+	extendData["intent_id"] = createdIntent.ID
+	extendData["operation_token"] = createdIntent.IntentToken
 	bot.FSM.SetState(user.TelegramID, "awaiting_purchase_receipt", extendData)
 
 	var text strings.Builder
 	text.WriteString("💳 **پرداخت مستقیم برای تمدید سرویس**\n\n")
-	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%s %s**\n\n", persian.FormatMoney(cost), currency))
+	text.WriteString(fmt.Sprintf("مبلغ قابل پرداخت: **%s**\n\n", persian.FormatMoney(cost)))
 	if card != "" {
 		text.WriteString(fmt.Sprintf("شماره کارت جهت واریز:\n`%s`\n", card))
 	}

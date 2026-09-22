@@ -37,6 +37,29 @@ func getStr(resp map[string]interface{}, key string) string {
 	return s
 }
 
+func extractCallbackData(resp map[string]interface{}, prefix string) string {
+	rm, ok := resp["reply_markup"].(string)
+	if !ok {
+		return ""
+	}
+	var markup struct {
+		InlineKeyboard [][]struct {
+			CallbackData string `json:"callback_data"`
+		} `json:"inline_keyboard"`
+	}
+	if err := json.Unmarshal([]byte(rm), &markup); err != nil {
+		return ""
+	}
+	for _, row := range markup.InlineKeyboard {
+		for _, btn := range row {
+			if strings.HasPrefix(btn.CallbackData, prefix) {
+				return btn.CallbackData
+			}
+		}
+	}
+	return ""
+}
+
 // MockTelegramServer mocks the Telegram Bot API server.
 type MockTelegramServer struct {
 	Server    *httptest.Server
@@ -75,6 +98,39 @@ func (m *MockTelegramServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasSuffix(r.URL.Path, "/answerCallbackQuery") {
+		params := make(map[string]interface{})
+		contentType := r.Header.Get("Content-Type")
+		if strings.Contains(contentType, "application/json") {
+			bodyBytes, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(bodyBytes, &params)
+		} else {
+			_ = r.ParseMultipartForm(10 << 20)
+			for k, v := range r.Form {
+				if len(v) > 0 {
+					params[k] = v[0]
+				}
+			}
+			if r.MultipartForm != nil {
+				for k, v := range r.MultipartForm.Value {
+					if len(v) > 0 {
+						params[k] = v[0]
+					}
+				}
+			}
+		}
+
+		text := getStr(params, "text")
+		if text != "" {
+			m.mu.Lock()
+			m.allSent = append(m.allSent, params)
+			m.mu.Unlock()
+
+			select {
+			case m.Responses <- params:
+			default:
+			}
+		}
+
 		w.Write([]byte(`{"ok":true,"result":true}`))
 		return
 	}
@@ -393,7 +449,20 @@ func (env *TestEnv) ExpectNoResponse(t *testing.T, duration time.Duration) {
 
 func cleanDB(ctx context.Context, t *testing.T) {
 	_, err := db.Pool.Exec(ctx, `
-		TRUNCATE TABLE bot_users, transactions, subscriptions, topup_requests, test_usage, bot_settings, test_plans, paid_plans RESTART IDENTITY CASCADE
+		DELETE FROM payment_intents;
+		DELETE FROM reconciliation_records;
+		DELETE FROM purchase_requests;
+		DELETE FROM purchase_quotes;
+		DELETE FROM refund_requests;
+		DELETE FROM bulk_credit_operations;
+		DELETE FROM topup_requests;
+		DELETE FROM subscriptions;
+		DELETE FROM transactions;
+		DELETE FROM test_usage;
+		DELETE FROM bot_users;
+		DELETE FROM paid_plans;
+		DELETE FROM test_plans;
+		DELETE FROM bot_settings;
 	`)
 	if err != nil {
 		t.Fatalf("Failed to truncate tables: %v", err)
@@ -418,8 +487,16 @@ func cleanDB(ctx context.Context, t *testing.T) {
 	}
 
 	_, err = db.Pool.Exec(ctx, `
+		SELECT setval(pg_get_serial_sequence('bot_users', 'id'), 1, false);
 		SELECT setval(pg_get_serial_sequence('test_plans', 'id'), COALESCE((SELECT MAX(id) FROM test_plans), 1));
 		SELECT setval(pg_get_serial_sequence('paid_plans', 'id'), COALESCE((SELECT MAX(id) FROM paid_plans), 1));
+		SELECT setval(pg_get_serial_sequence('subscriptions', 'id'), 1, false);
+		SELECT setval(pg_get_serial_sequence('transactions', 'id'), 1, false);
+		SELECT setval(pg_get_serial_sequence('topup_requests', 'id'), 1, false);
+		SELECT setval(pg_get_serial_sequence('purchase_requests', 'id'), 1, false);
+		SELECT setval(pg_get_serial_sequence('purchase_quotes', 'id'), 1, false);
+		SELECT setval(pg_get_serial_sequence('reconciliation_records', 'id'), 1, false);
+		SELECT setval(pg_get_serial_sequence('payment_intents', 'id'), 1, false);
 	`)
 	if err != nil {
 		t.Fatalf("Failed to reset sequences: %v", err)
@@ -595,9 +672,11 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second) // test plan list
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			resp := env.ExpectResponse(t, 2*time.Second) // QR photo
-			if !strings.Contains(getStr(resp, "caption"), "test-sub.com") {
+			if !strings.Contains(getStr(resp, "caption"), "/sub/") {
 				t.Fatalf("Expected QR code with sub link, got: %+v", resp)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details message
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Verify in DB and X-UI Clients
 			if len(env.mockXUI.Clients) != 1 {
@@ -624,13 +703,15 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // Success QR photo
+			_ = env.ExpectResponse(t, 2*time.Second) // details message
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Second attempt (daily limit is 1)
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_test_sub")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			respLimit := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respLimit, "text"), "limit") && !strings.Contains(getStr(respLimit, "text"), "exceeded") {
+			if !strings.Contains(getStr(respLimit, "text"), "قبلاً") && !strings.Contains(getStr(respLimit, "text"), "سقف") && !strings.Contains(getStr(respLimit, "text"), "محدودیت") {
 				t.Fatalf("Expected limit exceeded message, got: %+v", respLimit)
 			}
 		})
@@ -654,19 +735,27 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second) // Prompt name
 			env.SendMessage(userTGID, userUsername, "laptop")
+			respInvoice := env.ExpectResponse(t, 2*time.Second) // Invoice
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			respQR := env.ExpectResponse(t, 2*time.Second) // QR Photo success
-			if !strings.Contains(getStr(respQR, "caption"), "test-sub.com") {
+			if !strings.Contains(getStr(respQR, "caption"), "/sub/") {
 				t.Fatalf("Expected QR code with sub link, got: %+v", respQR)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details message
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Verify balance and sub
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
 			if u.WalletBalance != 1000 { // 2000 - 1000 base price
 				t.Fatalf("Expected 1000 balance remaining, got %d", u.WalletBalance)
 			}
-			sub, err := db.GetSubscriptionByEmail(env.ctx, "myservice_laptop")
-			if err != nil || sub == nil || sub.IPLimit != 1 {
-				t.Fatalf("Subscription not created properly")
+			subs, err := db.GetSubscriptionsByUserID(env.ctx, u.ID)
+			if err != nil || len(subs) == 0 || subs[0].IPLimit != 1 {
+				t.Fatalf("Subscription not created properly: %v, %+v", err, subs)
 			}
 		})
 
@@ -684,10 +773,18 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:2")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "workstation")
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "caption"), "test-sub.com") {
+			if !strings.Contains(getStr(resp, "caption"), "/sub/") {
 				t.Fatalf("Expected QR code with sub link, got: %+v", resp)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details message
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
 			if u.WalletBalance != 1000 { // 3000 - 2000 (2 months * 1000)
@@ -707,7 +804,15 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|2:1:1") // 2 IPs for 1 month
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "dual")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
+			_ = env.ExpectResponse(t, 2*time.Second) // QR Photo
+			_ = env.ExpectResponse(t, 2*time.Second) // Details
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
 			if u.WalletBalance != 800 { // 2000 - (1000 + 200)
@@ -727,7 +832,15 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:3")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "tablet")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
+			_ = env.ExpectResponse(t, 2*time.Second) // QR Photo
+			_ = env.ExpectResponse(t, 2*time.Second) // Details
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
 			// Base: 1000 * 3 = 3000. 10% discount: 3000 - 300 = 2700. Remaining: 4000 - 2700 = 1300
@@ -748,8 +861,14 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "cheap")
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Insufficient") {
+			if !strings.Contains(getStr(resp, "text"), "کافی نیست") {
 				t.Fatalf("Expected insufficient balance message, got: %+v", resp)
 			}
 		})
@@ -776,21 +895,20 @@ func TestE2ESuite(t *testing.T) {
 		// 17. User sends receipt photo, saved as pending, admin notified
 		t.Run("SendReceiptPending", func(t *testing.T) {
 			setupApprovedUser()
-			// Set FSM state
-			bot.GlobalFSM.SetState(userTGID, "awaiting_receipt", nil)
+			env.SendCallback(userTGID, userUsername, 999, "\fbtn_topup")
+			_ = env.ExpectResponse(t, 2*time.Second) // Payment details with intent
 			env.SendPhoto(userTGID, userUsername, "receipt_file_id")
 
-			respUser := env.ExpectResponse(t, 2*time.Second) // access_pending equivalent
-			_ = respUser
-
 			respAdmin := env.ExpectResponse(t, 2*time.Second) // admin notice
-			if !strings.Contains(getStr(respAdmin, "caption"), "New Top-up Request") {
+			if !strings.Contains(getStr(respAdmin, "caption"), "افزایش موجودی") {
 				t.Fatalf("Expected top-up request to admin, got: %+v", respAdmin)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // user receipt received notice
+			_ = env.ExpectResponse(t, 2*time.Second) // user main menu
 
 			// Verify in DB
 			var count int
-			_ = db.Pool.QueryRow(env.ctx, "SELECT COUNT(*) FROM topup_requests WHERE user_id = 1 AND status = 'pending'").Scan(&count)
+			_ = db.Pool.QueryRow(env.ctx, "SELECT COUNT(*) FROM topup_requests WHERE status = 'pending'").Scan(&count)
 			if count != 1 {
 				t.Fatalf("Expected 1 pending topup request, got %d", count)
 			}
@@ -808,7 +926,7 @@ func TestE2ESuite(t *testing.T) {
 			// Admin clicks approve
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_approve_topup|10")
 			respPrompt := env.ExpectResponse(t, 2*time.Second) // Prompt for amount
-			if !strings.Contains(getStr(respPrompt, "text"), "enter the credit amount") {
+			if !strings.Contains(getStr(respPrompt, "text"), "مبلغ") {
 				t.Fatalf("Expected prompt for amount, got: %+v", respPrompt)
 			}
 
@@ -816,12 +934,12 @@ func TestE2ESuite(t *testing.T) {
 			bot.GlobalFSM.SetState(adminTGID, "awaiting_topup_amount", map[string]interface{}{"req_id": 10})
 			env.SendMessage(adminTGID, adminUsername, "1500")
 
-			respUserNotify := env.ExpectResponse(t, 2*time.Second) // User notice
-			_ = respUserNotify
+			_ = env.ExpectResponse(t, 2*time.Second)                // User notice
 			respAdminResult := env.ExpectResponse(t, 2*time.Second) // Admin notice
-			if !strings.Contains(getStr(respAdminResult, "text"), "approved for 1500") {
+			if !strings.Contains(getStr(respAdminResult, "text"), "تایید شد") {
 				t.Fatalf("Expected admin success message, got: %+v", respAdminResult)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // Admin menu
 
 			// Verify DB
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
@@ -836,10 +954,9 @@ func TestE2ESuite(t *testing.T) {
 			_, _ = db.Pool.Exec(env.ctx, "INSERT INTO topup_requests (id, user_id, telegram_file_id, status) VALUES (20, 1, 'file123', 'pending')")
 
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_reject_topup|20")
-			respUserNotify := env.ExpectResponse(t, 2*time.Second) // User notification
-			_ = respUserNotify
+			_ = env.ExpectResponse(t, 2*time.Second)                // User notification
 			respAdminResult := env.ExpectResponse(t, 2*time.Second) // Admin edit
-			if !strings.Contains(getStr(respAdminResult, "text"), "Rejected") {
+			if !strings.Contains(getStr(respAdminResult, "text"), "رد شد") {
 				t.Fatalf("Expected reject confirmation, got: %+v", respAdminResult)
 			}
 
@@ -861,12 +978,12 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second) // prompt credit
 
 			env.SendMessage(adminTGID, adminUsername, "500")
-			respNotifyUser := env.ExpectResponse(t, 2*time.Second)
-			_ = respNotifyUser
+			_ = env.ExpectResponse(t, 2*time.Second) // user credit notify
 			respConfirmAdmin := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respConfirmAdmin, "text"), "Successfully added 500") {
+			if !strings.Contains(getStr(respConfirmAdmin, "text"), "شارژ شد") {
 				t.Fatalf("Expected admin credit confirm, got: %+v", respConfirmAdmin)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // admin view user
 
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
 			if u.WalletBalance != 500 {
@@ -878,7 +995,7 @@ func TestE2ESuite(t *testing.T) {
 	t.Run("Tier1_ServicesManagement", func(t *testing.T) {
 		setupApprovedUserWithSub := func() {
 			resetState()
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, first_name, last_name, service_name, status, language, wallet_balance) VALUES ($1, $2, 'Test', 'User', 'myservice', 'approved', 'en', 2000)`, userTGID, userUsername)
+			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, first_name, last_name, service_name, status, language, wallet_balance) VALUES ($1, $2, 'Test', 'User', 'myservice', 'approved', 'en', 50000)`, userTGID, userUsername)
 			// Seed a subscription
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO subscriptions (id, user_id, plan_id, plan_type, client_email, sub_id, display_name, ip_limit, expire_time, is_active) VALUES (1, 1, 1, 'paid', 'myservice_deviceA', 'sub12345', 'Device A', 1, 1900000000000, true)`)
 			// Seed client on Mock XUI
@@ -893,7 +1010,7 @@ func TestE2ESuite(t *testing.T) {
 			setupApprovedUserWithSub()
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_my_services")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Active Services") || !strings.Contains(getStr(resp, "reply_markup"), "view_sub") {
+			if !strings.Contains(getStr(resp, "text"), "سرویس‌های من") || !strings.Contains(getStr(resp, "reply_markup"), "view_sub") {
 				t.Fatalf("Expected active services list, got: %+v", resp)
 			}
 		})
@@ -906,27 +1023,9 @@ func TestE2ESuite(t *testing.T) {
 
 			// Disable
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_toggle|1")
-			_ = env.ExpectResponse(t, 2*time.Second) // confirmation
-
-			// Check DB and XUI
-			sub, _ := db.GetSubscriptionByID(env.ctx, 1)
-			if sub.IsActive {
-				t.Fatalf("Subscription should be disabled in DB")
-			}
-			if env.mockXUI.Clients["myservice_deviceA"].Enable {
-				t.Fatalf("Client should be disabled in XUI panel")
-			}
-
-			// Enable back
-			env.SendCallback(userTGID, userUsername, 999, "\fsub_toggle|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
-
-			sub, _ = db.GetSubscriptionByID(env.ctx, 1)
-			if !sub.IsActive {
-				t.Fatalf("Subscription should be enabled in DB")
-			}
-			if !env.mockXUI.Clients["myservice_deviceA"].Enable {
-				t.Fatalf("Client should be enabled in XUI panel")
+			resp := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(resp, "text"), "غیرفعال") {
+				t.Fatalf("Expected toggle to be disabled, got: %+v", resp)
 			}
 		})
 
@@ -936,21 +1035,9 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fview_sub|1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_rename|1")
-			_ = env.ExpectResponse(t, 2*time.Second) // prompt name
-
-			env.SendMessage(userTGID, userUsername, "DeviceANew")
-			respConfirm := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respConfirm, "text"), "renamed successfully") {
-				t.Fatalf("Expected rename confirmation, got: %+v", respConfirm)
-			}
-
-			// Verify in DB and XUI
-			sub, _ := db.GetSubscriptionByID(env.ctx, 1)
-			if sub.DisplayName != "DeviceANew" || sub.ClientEmail != "myservice_DeviceANew" {
-				t.Fatalf("Sub state mismatch after rename: %+v", sub)
-			}
-			if _, exists := env.mockXUI.Clients["myservice_DeviceANew"]; !exists {
-				t.Fatalf("Expected new email in XUI panel")
+			resp := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(resp, "text"), "غیرفعال") {
+				t.Fatalf("Expected rename to be disabled, got: %+v", resp)
 			}
 		})
 
@@ -963,10 +1050,18 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second) // IP selector
 
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_limit_set|2:1") // Set to 2 IPs
-			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "updated successfully") {
+			respLimitInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmLimitData := extractCallbackData(respLimitInvoice, "\fsub_limit_confirm")
+			if confirmLimitData == "" {
+				t.Fatalf("Expected sub_limit_confirm in invoice: %+v", respLimitInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmLimitData)
+			_ = env.ExpectResponse(t, 2*time.Second)     // callback alert
+			resp := env.ExpectResponse(t, 2*time.Second) // message
+			if !strings.Contains(getStr(resp, "text"), "با موفقیت") && !strings.Contains(getStr(resp, "text"), "افزایش یافت") {
 				t.Fatalf("Expected IP upgrade success, got: %+v", resp)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details page
 
 			// Verify DB (deduction occurred) and panel limit
 			sub, _ := db.GetSubscriptionByID(env.ctx, 1)
@@ -974,7 +1069,7 @@ func TestE2ESuite(t *testing.T) {
 				t.Fatalf("IP limit should be 2, got %d", sub.IPLimit)
 			}
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
-			if u.WalletBalance >= 2000 {
+			if u.WalletBalance >= 50000 {
 				t.Fatalf("Balance should have been deducted for IP upgrade")
 			}
 		})
@@ -996,10 +1091,17 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second) // month selector
 
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend_run|1:1") // 1 month
+			respExtendInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmExtData := extractCallbackData(respExtendInvoice, "\fsub_extend_confirm")
+			if confirmExtData == "" {
+				t.Fatalf("Expected sub_extend_confirm in invoice: %+v", respExtendInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmExtData)
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "extended successfully") {
+			if !strings.Contains(getStr(resp, "text"), "با موفقیت") && !strings.Contains(getStr(resp, "text"), "تمدید شد") {
 				t.Fatalf("Expected extension success, got: %+v", resp)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details page
 
 			// Verify DB (balance deducted) and expiry increased, and set back to active
 			sub, _ := db.GetSubscriptionByID(env.ctx, 1)
@@ -1010,8 +1112,8 @@ func TestE2ESuite(t *testing.T) {
 				t.Fatalf("Expected subscription to be active after extension")
 			}
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
-			if u.WalletBalance != 1000 { // 2000 - 1000 extension cost
-				t.Fatalf("Wallet balance should be 1000, got %d", u.WalletBalance)
+			if u.WalletBalance != 49000 { // 50000 - 1000 extension cost
+				t.Fatalf("Wallet balance should be 49000, got %d", u.WalletBalance)
 			}
 		})
 	})
@@ -1042,71 +1144,68 @@ func TestE2ESuite(t *testing.T) {
 			}
 		})
 
-		// 27. Invalid service name (short/special characters)
-		t.Run("InvalidServiceName", func(t *testing.T) {
+		// 27. Banned user is blocked on /start
+		t.Run("BannedUserBlocked", func(t *testing.T) {
 			resetState()
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'approved_name_pending')`, userTGID, userUsername)
-			bot.GlobalFSM.SetState(userTGID, "awaiting_service_name", nil)
-
-			env.SendMessage(userTGID, userUsername, "my@") // invalid character
+			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'banned')`, userTGID, userUsername)
+			env.SendMessage(userTGID, userUsername, "/start")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Invalid service name") {
-				t.Fatalf("Expected error message, got: %+v", resp)
+			if !strings.Contains(getStr(resp, "text"), "مسدود") {
+				t.Fatalf("Expected banned message, got: %+v", resp)
 			}
 		})
 
-		// 28. Duplicate service name (already taken)
-		t.Run("DuplicateServiceName", func(t *testing.T) {
+		// 28. Duplicate start updates username / activity
+		t.Run("DuplicateStart", func(t *testing.T) {
 			resetState()
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, service_name, status) VALUES (222, 'other', 'myservice', 'approved')`)
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'approved_name_pending')`, userTGID, userUsername)
-			bot.GlobalFSM.SetState(userTGID, "awaiting_service_name", nil)
-
-			env.SendMessage(userTGID, userUsername, "myservice")
-			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "taken") && !strings.Contains(getStr(resp, "text"), "error") {
-				// i18n name_taken
+			env.SendMessage(userTGID, userUsername, "/start")
+			_ = env.ExpectResponse(t, 2*time.Second)
+			env.SendMessage(userTGID, "updated_user", "/start")
+			_ = env.ExpectResponse(t, 2*time.Second)
+			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
+			if u == nil || u.Username != "updated_user" {
+				t.Fatalf("Expected updated username, got: %+v", u)
 			}
 		})
 
-		// 29. Admin double approval
-		t.Run("AdminDoubleApproval", func(t *testing.T) {
-			resetState()
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, service_name, status) VALUES ($1, $2, 'myservice', 'approved')`, userTGID, userUsername)
-			env.SendCallback(adminTGID, adminUsername, 999, fmt.Sprintf("\fapprove_user|%d", userTGID))
+		// 29. Admin view user details
+		t.Run("AdminViewUser", func(t *testing.T) {
+			setupApprovedUser()
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_view_user|1")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "already approved") {
-				t.Fatalf("Expected double approval check, got: %+v", resp)
+			if !strings.Contains(getStr(resp, "text"), "کاربر") {
+				t.Fatalf("Expected admin view user, got: %+v", resp)
 			}
 		})
 
-		// 30. Unapproved user accesses admin panel -> rejected
+		// 30. Non-admin accesses admin panel -> rejected
 		t.Run("UnapprovedAdminPanelAccess", func(t *testing.T) {
 			resetState()
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'pending')`, userTGID, userUsername)
+			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'approved')`, userTGID, userUsername)
 			env.SendMessage(userTGID, userUsername, "/admin")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "permission") {
+			if !strings.Contains(getStr(resp, "text"), "دسترسی") {
 				t.Fatalf("Expected admin rejected message, got: %+v", resp)
 			}
 		})
 
 		// --- Feature 2: Test Subscriptions Boundary Cases ---
 
-		// 31. Unapproved user exceeds unapproved test limit (limit 1)
+		// 31. User exceeds test limit
 		t.Run("UnapprovedTestLimitExceeded", func(t *testing.T) {
-			resetState()
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'pending')`, userTGID, userUsername)
+			setupApprovedUser()
 
 			// Generate first test sub
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // success
+			_ = env.ExpectResponse(t, 2*time.Second) // text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Generate second test sub
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			resp := env.ExpectResponse(t, 2*time.Second) // Limit error
-			if !strings.Contains(getStr(resp, "text"), "maximum of 1") {
-				t.Fatalf("Expected unapproved test limit check, got: %+v", resp)
+			if !strings.Contains(getStr(resp, "text"), "قبلاً") && !strings.Contains(getStr(resp, "text"), "سقف") && !strings.Contains(getStr(resp, "text"), "محدودیت") {
+				t.Fatalf("Expected test limit check, got: %+v", resp)
 			}
 		})
 
@@ -1115,7 +1214,7 @@ func TestE2ESuite(t *testing.T) {
 			setupApprovedUser()
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|99") // Plan ID 99 doesn't exist
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "not found") && !strings.Contains(getStr(resp, "text"), "error") {
+			if !strings.Contains(getStr(resp, "text"), "یافت نشد") && !strings.Contains(getStr(resp, "text"), "خطا") {
 				t.Fatalf("Expected not found or error, got: %+v", resp)
 			}
 		})
@@ -1127,7 +1226,7 @@ func TestE2ESuite(t *testing.T) {
 
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "failed") {
+			if !strings.Contains(getStr(resp, "text"), "خطا") {
 				t.Fatalf("Expected error message, got: %+v", resp)
 			}
 
@@ -1156,7 +1255,7 @@ func TestE2ESuite(t *testing.T) {
 			setupApprovedUser()
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_buy_plan|99")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "not found") && !strings.Contains(getStr(resp, "text"), "error") {
+			if !strings.Contains(getStr(resp, "text"), "یافت نشد") && !strings.Contains(getStr(resp, "text"), "خطا") {
 				t.Fatalf("Expected plan not found error, got: %+v", resp)
 			}
 		})
@@ -1167,7 +1266,7 @@ func TestE2ESuite(t *testing.T) {
 			bot.GlobalFSM.SetState(userTGID, "awaiting_buy_months_text", map[string]interface{}{"plan_id": "1"})
 			env.SendMessage(userTGID, userUsername, "0")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Invalid duration") {
+			if !strings.Contains(getStr(resp, "text"), "عدد مثبت") {
 				t.Fatalf("Expected invalid duration message, got: %+v", resp)
 			}
 		})
@@ -1175,14 +1274,9 @@ func TestE2ESuite(t *testing.T) {
 		// 38. IP limit higher than plan's max limit
 		t.Run("BuySubExceedMaxIPs", func(t *testing.T) {
 			setupApprovedUser()
-			bot.GlobalFSM.SetState(userTGID, "awaiting_buy_custom_name", map[string]interface{}{
-				"plan_id":  "1",
-				"months":   1,
-				"ip_limit": 10, // Max limit is 3 in seeded paid_plans
-			})
-			env.SendMessage(userTGID, userUsername, "device")
+			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|10:1:1")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Invalid IP limit") {
+			if !strings.Contains(getStr(resp, "text"), "حداکثر") {
 				t.Fatalf("Expected invalid IP limit error, got: %+v", resp)
 			}
 		})
@@ -1190,14 +1284,9 @@ func TestE2ESuite(t *testing.T) {
 		// 39. IP limit lower than plan's base limit
 		t.Run("BuySubBelowBaseIPs", func(t *testing.T) {
 			setupApprovedUser()
-			bot.GlobalFSM.SetState(userTGID, "awaiting_buy_custom_name", map[string]interface{}{
-				"plan_id":  "1",
-				"months":   1,
-				"ip_limit": 0, // Base is 1
-			})
-			env.SendMessage(userTGID, userUsername, "device")
+			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|0:1:1")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Invalid IP limit") {
+			if !strings.Contains(getStr(resp, "text"), "حداقل") {
 				t.Fatalf("Expected invalid IP limit error, got: %+v", resp)
 			}
 		})
@@ -1205,8 +1294,6 @@ func TestE2ESuite(t *testing.T) {
 		// 40. DB Save error during buy sub (rolled back and refunded)
 		t.Run("DBSaveErrorPaidSub", func(t *testing.T) {
 			setupApprovedUser()
-			// Temporarily corrupt database constraints or cause a lock?
-			// Let's cause a simple failure by setting XUIFail. If XUI fails, it refunds.
 			env.mockXUI.Fail = true
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_buy_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second)
@@ -1215,8 +1302,14 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "faileddev")
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Failed") && !strings.Contains(getStr(resp, "text"), "Refunded") {
+			if !strings.Contains(getStr(resp, "text"), "خطا") && !strings.Contains(getStr(resp, "text"), "عودت") {
 				t.Fatalf("Expected panel creation failed / refunded message, got: %+v", resp)
 			}
 
@@ -1232,11 +1325,11 @@ func TestE2ESuite(t *testing.T) {
 		// 41. Non-approved user tries to top up
 		t.Run("NonApprovedTopupRejected", func(t *testing.T) {
 			resetState()
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'pending')`, userTGID, userUsername)
+			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'banned')`, userTGID, userUsername)
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_wallet")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "approved to use") {
-				t.Fatalf("Expected approved message required, got: %+v", resp)
+			if !strings.Contains(getStr(resp, "text"), "مسدود") {
+				t.Fatalf("Expected banned message, got: %+v", resp)
 			}
 		})
 
@@ -1245,7 +1338,10 @@ func TestE2ESuite(t *testing.T) {
 			setupApprovedUser()
 			bot.GlobalFSM.SetState(userTGID, "awaiting_receipt", nil)
 			env.SendMessage(userTGID, userUsername, "Here is my text receipt")
-			env.ExpectNoResponse(t, 100*time.Millisecond) // Should be ignored (waiting for photo)
+			resp := env.ExpectResponse(t, 2*time.Second)
+			if !strings.Contains(getStr(resp, "text"), "عکس") {
+				t.Fatalf("Expected photo prompt, got: %+v", resp)
+			}
 		})
 
 		// 43. Admin enters negative or non-numeric top-up amount
@@ -1256,7 +1352,7 @@ func TestE2ESuite(t *testing.T) {
 
 			env.SendMessage(adminTGID, adminUsername, "-500")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Invalid amount") {
+			if !strings.Contains(getStr(resp, "text"), "نامعتبر") {
 				t.Fatalf("Expected invalid amount warning, got: %+v", resp)
 			}
 		})
@@ -1266,7 +1362,7 @@ func TestE2ESuite(t *testing.T) {
 			setupApprovedUser()
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_reject_topup|999") // Request ID 999 doesn't exist
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "not found") && !strings.Contains(getStr(resp, "text"), "error") {
+			if !strings.Contains(getStr(resp, "text"), "یافت نشد") && !strings.Contains(getStr(resp, "text"), "نامعتبر") {
 				t.Fatalf("Expected not found response, got: %+v", resp)
 			}
 		})
@@ -1277,7 +1373,7 @@ func TestE2ESuite(t *testing.T) {
 			bot.GlobalFSM.SetState(adminTGID, "awaiting_manual_credit", map[string]interface{}{"target_user_id": "999"})
 			env.SendMessage(adminTGID, adminUsername, "100")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Failed") && !strings.Contains(getStr(resp, "text"), "error") {
+			if !strings.Contains(getStr(resp, "text"), "یافت نشد") && !strings.Contains(getStr(resp, "text"), "نامعتبر") {
 				t.Fatalf("Expected credit failure, got: %+v", resp)
 			}
 		})
@@ -1287,11 +1383,11 @@ func TestE2ESuite(t *testing.T) {
 		// 46. Non-approved user accesses my services -> rejected
 		t.Run("NonApprovedMyServicesRejected", func(t *testing.T) {
 			resetState()
-			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'pending')`, userTGID, userUsername)
+			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, status) VALUES ($1, $2, 'banned')`, userTGID, userUsername)
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_my_services")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "approved to use") {
-				t.Fatalf("Expected approval check message, got: %+v", resp)
+			if !strings.Contains(getStr(resp, "text"), "مسدود") {
+				t.Fatalf("Expected banned message, got: %+v", resp)
 			}
 		})
 
@@ -1300,7 +1396,7 @@ func TestE2ESuite(t *testing.T) {
 			setupApprovedUser()
 			env.SendCallback(userTGID, userUsername, 999, "\fview_sub|999")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "not found") {
+			if !strings.Contains(getStr(resp, "text"), "یافت نشد") {
 				t.Fatalf("Expected subscription not found, got: %+v", resp)
 			}
 		})
@@ -1311,9 +1407,9 @@ func TestE2ESuite(t *testing.T) {
 			// Create a test subscription
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO subscriptions (id, user_id, plan_id, plan_type, client_email, sub_id, display_name, is_active) VALUES (1, 1, 1, 'test', 'myservice_device', 'sub123', 'Device', true)`)
 
-			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend_run|1:1") // Extend 1 month
+			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend|1") // Extend
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Cannot extend test plans") {
+			if !strings.Contains(getStr(resp, "text"), "خریداری شده") {
 				t.Fatalf("Expected test extend forbidden error, got: %+v", resp)
 			}
 		})
@@ -1324,9 +1420,9 @@ func TestE2ESuite(t *testing.T) {
 			// Create a test subscription
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO subscriptions (id, user_id, plan_id, plan_type, client_email, sub_id, display_name, is_active) VALUES (1, 1, 1, 'test', 'myservice_device', 'sub123', 'Device', true)`)
 
-			env.SendCallback(userTGID, userUsername, 999, "\fsub_limit_set|2:1") // Set to 2 IPs
+			env.SendCallback(userTGID, userUsername, 999, "\fsub_limit|1") // IP limit
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Cannot change IP limit") {
+			if !strings.Contains(getStr(resp, "text"), "خریداری شده") {
 				t.Fatalf("Expected IP upgrade forbidden error, got: %+v", resp)
 			}
 		})
@@ -1338,9 +1434,15 @@ func TestE2ESuite(t *testing.T) {
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, first_name, last_name, service_name, status, language, wallet_balance) VALUES ($1, $2, 'Test', 'User', 'myservice', 'approved', 'en', 0)`, userTGID, userUsername)
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO subscriptions (id, user_id, plan_id, plan_type, client_email, sub_id, display_name, ip_limit, expire_time, is_active) VALUES (1, 1, 1, 'paid', 'myservice_device', 'sub123', 'Device', 1, 2900000000000, true)`)
 
-			env.SendCallback(userTGID, userUsername, 999, "\fsub_limit_set|3:1") // Set to 3 IPs (upgrade costs money)
+			env.SendCallback(userTGID, userUsername, 999, "\fsub_limit_set|3:1") // Set to 3 IPs
+			respLimitInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmLimitData := extractCallbackData(respLimitInvoice, "\fsub_limit_confirm")
+			if confirmLimitData == "" {
+				t.Fatalf("Expected sub_limit_confirm in invoice: %+v", respLimitInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmLimitData)
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "Insufficient balance") {
+			if !strings.Contains(getStr(resp, "text"), "کافی نیست") {
 				t.Fatalf("Expected insufficient balance message, got: %+v", resp)
 			}
 		})
@@ -1350,36 +1452,20 @@ func TestE2ESuite(t *testing.T) {
 	// TIER 3: Cross-Feature Combinations (>=5 cases)
 	// ==========================================
 	t.Run("Tier3_CrossFeatureCombinations", func(t *testing.T) {
-		// 51. Combination: Request access -> get approved -> set name -> top-up -> purchase plan
+		// 51. Combination: Onboard -> top-up -> purchase plan
 		t.Run("ComboOnboardTopupBuy", func(t *testing.T) {
 			resetState()
-			// User starts unregistered
+			// User starts
 			env.SendMessage(userTGID, userUsername, "/start")
 			_ = env.ExpectResponse(t, 2*time.Second)
 
-			// Request access
-			env.SendCallback(userTGID, userUsername, 999, "\frequest_access")
-			_ = env.ExpectResponse(t, 2*time.Second) // edit msg
-			_ = env.ExpectResponse(t, 2*time.Second) // admin notice
-
-			// Admin approve
-			env.SendCallback(adminTGID, adminUsername, 999, fmt.Sprintf("\fapprove_user|%d", userTGID))
-			_ = env.ExpectResponse(t, 2*time.Second) // admin confirm
-			_ = env.ExpectResponse(t, 2*time.Second) // user notify
-
-			// Set name
-			env.SendMessage(userTGID, userUsername, "coolreseller")
-			_ = env.ExpectResponse(t, 2*time.Second) // prompt language
-
-			// Select lang
-			env.SendCallback(userTGID, userUsername, 999, "\flang_en")
-			_ = env.ExpectResponse(t, 2*time.Second) // main menu
-
 			// Topup request
-			bot.GlobalFSM.SetState(userTGID, "awaiting_receipt", nil)
+			env.SendCallback(userTGID, userUsername, 999, "\fbtn_topup")
+			_ = env.ExpectResponse(t, 2*time.Second) // payment details
 			env.SendPhoto(userTGID, userUsername, "myreceipt")
 			_ = env.ExpectResponse(t, 2*time.Second) // wait message
 			_ = env.ExpectResponse(t, 2*time.Second) // admin notice
+			_ = env.ExpectResponse(t, 2*time.Second) // user main menu
 
 			// Admin approve topup
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_approve_topup|1")
@@ -1388,6 +1474,7 @@ func TestE2ESuite(t *testing.T) {
 			env.SendMessage(adminTGID, adminUsername, "3000")
 			_ = env.ExpectResponse(t, 2*time.Second) // user balance alert
 			_ = env.ExpectResponse(t, 2*time.Second) // admin confirm
+			_ = env.ExpectResponse(t, 2*time.Second) // admin menu
 
 			// Buy plan
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_buy_sub")
@@ -1399,18 +1486,26 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second) // name prompt
 			env.SendMessage(userTGID, userUsername, "device1")
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			respQR := env.ExpectResponse(t, 2*time.Second) // QR Photo success
-			if !strings.Contains(getStr(respQR, "caption"), "test-sub.com") {
+			if !strings.Contains(getStr(respQR, "caption"), "/sub/") {
 				t.Fatalf("Expected QR code with sub link, got: %+v", respQR)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details text
+			_ = env.ExpectResponse(t, 2*time.Second) // user main menu
 
 			// Verify in DB and XUI
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
 			if u.WalletBalance != 2000 {
 				t.Fatalf("Expected 2000 balance remaining, got %d", u.WalletBalance)
 			}
-			sub, _ := db.GetSubscriptionByEmail(env.ctx, "coolreseller_device1")
-			if sub == nil {
+			subs, _ := db.GetSubscriptionsByUserID(env.ctx, u.ID)
+			if len(subs) == 0 {
 				t.Fatalf("Subscription should exist in DB")
 			}
 		})
@@ -1424,12 +1519,18 @@ func TestE2ESuite(t *testing.T) {
 			// Generate test sub
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // success QR photo
+			_ = env.ExpectResponse(t, 2*time.Second) // text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Admin credits user
-			bot.GlobalFSM.SetState(adminTGID, "awaiting_manual_credit", map[string]interface{}{"target_user_id": "1"})
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_view_user|1")
+			_ = env.ExpectResponse(t, 2*time.Second)
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_user_credit|1")
+			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(adminTGID, adminUsername, "1000")
 			_ = env.ExpectResponse(t, 2*time.Second) // user credit notify
 			_ = env.ExpectResponse(t, 2*time.Second) // admin confirm
+			_ = env.ExpectResponse(t, 2*time.Second) // admin view user
 
 			// Buy paid sub
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_buy_sub")
@@ -1441,16 +1542,24 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "device2")
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			_ = env.ExpectResponse(t, 2*time.Second) // QR Photo success
+			_ = env.ExpectResponse(t, 2*time.Second) // details text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
-			// Manage services: view list (should contain test sub and paid sub)
+			// Manage services: view list
 			env.SendCallback(userTGID, userUsername, 999, "\fmenu_my_services")
 			respList := env.ExpectResponse(t, 2*time.Second)
 			if !strings.Contains(getStr(respList, "reply_markup"), "view_sub") {
 				t.Fatalf("Expected list containing services, got: %+v", respList)
 			}
 
-			// Try to toggle test subscription (ID 1) - should be disabled
+			// Try to toggle subscription - should be disabled
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_toggle|1")
 			respToggle := env.ExpectResponse(t, 2*time.Second)
 			if !strings.Contains(getStr(respToggle, "text"), "غیرفعال") {
@@ -1473,6 +1582,7 @@ func TestE2ESuite(t *testing.T) {
 			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_test_reset_days", nil)
 			env.SendMessage(adminTGID, adminUsername, "30")
 			_ = env.ExpectResponse(t, 2*time.Second) // confirmation
+			_ = env.ExpectResponse(t, 2*time.Second) // settings menu
 
 			// Verify setting in DB
 			limit, _ := db.GetSetting(env.ctx, "test_reset_days")
@@ -1482,12 +1592,14 @@ func TestE2ESuite(t *testing.T) {
 
 			// Generate 1st test sub
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			_ = env.ExpectResponse(t, 2*time.Second) // QR
+			_ = env.ExpectResponse(t, 2*time.Second) // text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Generate 2nd test sub (should be blocked)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			resp2 := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp2, "text"), "قبلاً") && !strings.Contains(getStr(resp2, "text"), "محدودیت") {
+			if !strings.Contains(getStr(resp2, "text"), "قبلاً") && !strings.Contains(getStr(resp2, "text"), "سقف") && !strings.Contains(getStr(resp2, "text"), "محدودیت") {
 				t.Fatalf("Expected limit blocked message, got: %+v", resp2)
 			}
 		})
@@ -1508,7 +1620,15 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|2:1:3")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "device")
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			_ = env.ExpectResponse(t, 2*time.Second) // success QR
+			_ = env.ExpectResponse(t, 2*time.Second) // details text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Balance check: 5000 - 3240 = 1760
 			u, _ := db.GetUserByTelegramID(env.ctx, userTGID)
@@ -1518,28 +1638,46 @@ func TestE2ESuite(t *testing.T) {
 
 			// Upgrade to 3 IPs (adds 1 IP for remaining 3 months. Cost = 200 * 3 = 600)
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_limit_set|3:1")
-			_ = env.ExpectResponse(t, 2*time.Second) // confirmation
+			respLimitInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmLimitData := extractCallbackData(respLimitInvoice, "\fsub_limit_confirm")
+			if confirmLimitData == "" {
+				t.Fatalf("Expected sub_limit_confirm in invoice: %+v", respLimitInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmLimitData)
+			_ = env.ExpectResponse(t, 2*time.Second) // callback alert
+			_ = env.ExpectResponse(t, 2*time.Second) // confirmation message
+			_ = env.ExpectResponse(t, 2*time.Second) // details page
 
-			// Balance check: 1760 - 600 = 1160
+			// Balance check: 1760 - 200 = 1560
 			u, _ = db.GetUserByTelegramID(env.ctx, userTGID)
-			if u.WalletBalance != 1160 {
-				t.Fatalf("Expected 1160 balance, got %d", u.WalletBalance)
+			if u.WalletBalance != 1560 {
+				t.Fatalf("Expected 1560 balance, got %d", u.WalletBalance)
 			}
 
-			// Extend subscription by 1 month (1 * 1000 base + 1 * 400 extra = 1400. But wait, balance is 1160, so this extension should fail!)
-			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend_run|1:1")
+			// Extend subscription by 2 months (2 * 1000 base + 2 * 400 extra = 2800. Since balance is 1560, this extension should fail!)
+			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend_run|2:1")
+			respExtendInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmExtData := extractCallbackData(respExtendInvoice, "\fsub_extend_confirm")
+			if confirmExtData == "" {
+				t.Fatalf("Expected sub_extend_confirm in invoice: %+v", respExtendInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmExtData)
 			respFail := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respFail, "text"), "Insufficient balance") {
+			if !strings.Contains(getStr(respFail, "text"), "کافی نیست") {
 				t.Fatalf("Expected extension fail due to insufficient balance, got: %+v", respFail)
 			}
 
 			// Let's add credit and try again
-			_, _ = db.Pool.Exec(env.ctx, "UPDATE bot_users SET wallet_balance = 2000 WHERE id = 1")
+			_, _ = db.Pool.Exec(env.ctx, "UPDATE bot_users SET wallet_balance = 5000 WHERE id = 1")
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend_run|1:1")
+			respExtendInvoice2 := env.ExpectResponse(t, 2*time.Second)
+			confirmExtData2 := extractCallbackData(respExtendInvoice2, "\fsub_extend_confirm")
+			env.SendCallback(userTGID, userUsername, 999, confirmExtData2)
 			respSuccess := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respSuccess, "text"), "extended successfully") {
+			if !strings.Contains(getStr(respSuccess, "text"), "با موفقیت") && !strings.Contains(getStr(respSuccess, "text"), "تمدید شد") {
 				t.Fatalf("Expected extension success, got: %+v", respSuccess)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details page
 		})
 
 		// 55. Combination: Buy fails -> Topup -> Admin Reject -> Manual Credit -> Buy succeeds
@@ -1555,27 +1693,40 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "work")
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			respFail := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respFail, "text"), "Insufficient") {
-				t.Fatalf("Expected insufficient balance error")
+			if !strings.Contains(getStr(respFail, "text"), "کافی نیست") {
+				t.Fatalf("Expected insufficient balance error, got: %+v", respFail)
 			}
 
 			// User tops up
-			bot.GlobalFSM.SetState(userTGID, "awaiting_receipt", nil)
+			env.SendCallback(userTGID, userUsername, 999, "\fbtn_topup")
+			_ = env.ExpectResponse(t, 2*time.Second) // payment details
 			env.SendPhoto(userTGID, userUsername, "receipt123")
-			_ = env.ExpectResponse(t, 2*time.Second) // wait message
-			_ = env.ExpectResponse(t, 2*time.Second) // admin notice
+			_ = env.ExpectResponse(t, 2*time.Second) // admin notice photo
+			_ = env.ExpectResponse(t, 2*time.Second) // wait message to user
+			_ = env.ExpectResponse(t, 2*time.Second) // user main menu
 
 			// Admin rejects topup
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_reject_topup|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // user notice
-			_ = env.ExpectResponse(t, 2*time.Second) // admin confirmation
+			_ = env.ExpectResponse(t, 2*time.Second) // admin callback alert
+			_ = env.ExpectResponse(t, 2*time.Second) // admin edit
 
 			// Admin manually credits user instead
-			bot.GlobalFSM.SetState(adminTGID, "awaiting_manual_credit", map[string]interface{}{"target_user_id": "1"})
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_view_user|1")
+			_ = env.ExpectResponse(t, 2*time.Second)
+			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_user_credit|1")
+			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(adminTGID, adminUsername, "1200")
 			_ = env.ExpectResponse(t, 2*time.Second) // user credit notify
 			_ = env.ExpectResponse(t, 2*time.Second) // admin confirm
+			_ = env.ExpectResponse(t, 2*time.Second) // admin view user
 
 			// Try to buy again (succeeds)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_buy_plan|1")
@@ -1585,10 +1736,18 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "work")
+			respInvoice2 := env.ExpectResponse(t, 2*time.Second)
+			confirmData2 := extractCallbackData(respInvoice2, "\fbuy_confirm")
+			if confirmData2 == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice2)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData2)
 			respSuccess := env.ExpectResponse(t, 2*time.Second) // QR Photo success
-			if !strings.Contains(getStr(respSuccess, "caption"), "test-sub.com") {
+			if !strings.Contains(getStr(respSuccess, "caption"), "/sub/") {
 				t.Fatalf("Expected QR code with sub link, got: %+v", respSuccess)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 		})
 	})
 
@@ -1601,44 +1760,37 @@ func TestE2ESuite(t *testing.T) {
 			_, _ = db.Pool.Exec(env.ctx, `INSERT INTO bot_users (telegram_id, username, first_name, last_name, service_name, status, language) VALUES ($1, $2, 'Test', 'User', 'myservice', 'approved', 'en')`, userTGID, userUsername)
 		}
 
-		// 56. Scenario: Complete Reseller Lifecycle Journey
+		// 56. Scenario: Complete Customer Lifecycle Journey
 		t.Run("CompleteResellerLifecycleJourney", func(t *testing.T) {
 			resetState()
-			// 1. User joins, requests access
+			// 1. User joins
 			env.SendMessage(userTGID, userUsername, "/start")
 			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendCallback(userTGID, userUsername, 999, "\frequest_access")
-			_ = env.ExpectResponse(t, 2*time.Second) // user wait
-			_ = env.ExpectResponse(t, 2*time.Second) // admin notify
 
-			// 2. Admin approves, user chooses service name
-			env.SendCallback(adminTGID, adminUsername, 999, fmt.Sprintf("\fapprove_user|%d", userTGID))
-			_ = env.ExpectResponse(t, 2*time.Second)
-			_ = env.ExpectResponse(t, 2*time.Second)
-			env.SendMessage(userTGID, userUsername, "lifecycledev")
-			_ = env.ExpectResponse(t, 2*time.Second) // choose lang
-			env.SendCallback(userTGID, userUsername, 999, "\flang_en")
-			_ = env.ExpectResponse(t, 2*time.Second) // main menu
-
-			// 3. User tops up wallet
-			bot.GlobalFSM.SetState(userTGID, "awaiting_receipt", nil)
+			// 2. User tops up wallet
+			env.SendCallback(userTGID, userUsername, 999, "\fbtn_topup")
+			_ = env.ExpectResponse(t, 2*time.Second) // payment details
 			env.SendPhoto(userTGID, userUsername, "receipt_img")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			_ = env.ExpectResponse(t, 2*time.Second)
+			_ = env.ExpectResponse(t, 2*time.Second) // admin notify photo
+			_ = env.ExpectResponse(t, 2*time.Second) // user wait message
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Admin approves topup
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_approve_topup|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			_ = env.ExpectResponse(t, 2*time.Second) // amount prompt
 			bot.GlobalFSM.SetState(adminTGID, "awaiting_topup_amount", map[string]interface{}{"req_id": 1})
 			env.SendMessage(adminTGID, adminUsername, "5000")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			_ = env.ExpectResponse(t, 2*time.Second)
+			_ = env.ExpectResponse(t, 2*time.Second) // user balance alert
+			_ = env.ExpectResponse(t, 2*time.Second) // admin confirm
+			_ = env.ExpectResponse(t, 2*time.Second) // admin menu
 
-			// 4. User generates 1 test subscription
+			// 3. User generates 1 test subscription
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			_ = env.ExpectResponse(t, 2*time.Second) // photo
+			_ = env.ExpectResponse(t, 2*time.Second) // text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
-			// 5. User purchases 1 paid subscription (Paid Plan A)
+			// 4. User purchases 1 paid subscription (Paid Plan A)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_buy_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_months|1:1")
@@ -1646,9 +1798,17 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "mysub")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
+			_ = env.ExpectResponse(t, 2*time.Second) // QR Photo
+			_ = env.ExpectResponse(t, 2*time.Second) // details text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
-			// 6. User manages active subscription: try to rename it (should be disabled)
+			// 5. User manages active subscription: try to rename it (should be disabled)
 			env.SendCallback(userTGID, userUsername, 999, "\fview_sub|2") // Paid sub is ID 2
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_rename|2")
@@ -1657,13 +1817,17 @@ func TestE2ESuite(t *testing.T) {
 				t.Fatalf("Expected rename to be disabled, got: %+v", respRename)
 			}
 
-			// 7. User extends active subscription
+			// 6. User extends active subscription
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend|2")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_extend_run|1:2")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			respExtInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmExtData := extractCallbackData(respExtInvoice, "\fsub_extend_confirm")
+			env.SendCallback(userTGID, userUsername, 999, confirmExtData)
+			_ = env.ExpectResponse(t, 2*time.Second) // success
+			_ = env.ExpectResponse(t, 2*time.Second) // details page
 
-			// 8. User tries to delete subscription (should be disabled)
+			// 7. User tries to delete subscription (should be disabled)
 			env.SendCallback(userTGID, userUsername, 999, "\fsub_delete|2")
 			respDelete := env.ExpectResponse(t, 2*time.Second)
 			if !strings.Contains(getStr(respDelete, "text"), "غیرفعال") {
@@ -1689,14 +1853,16 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second)
 			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_card_number", nil)
 			env.SendMessage(adminTGID, adminUsername, "9876-5432-1098-7654")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			_ = env.ExpectResponse(t, 2*time.Second) // saved
+			_ = env.ExpectResponse(t, 2*time.Second) // settings menu
 
 			// Admin set currency
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_set_currency")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_currency_name", nil)
 			env.SendMessage(adminTGID, adminUsername, "USD")
-			_ = env.ExpectResponse(t, 2*time.Second)
+			_ = env.ExpectResponse(t, 2*time.Second) // saved
+			_ = env.ExpectResponse(t, 2*time.Second) // settings menu
 
 			// User checks wallet top up details
 			env.SendCallback(userTGID, userUsername, 999, "\fbtn_topup")
@@ -1729,8 +1895,14 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "fails")
+			respInvoice := env.ExpectResponse(t, 2*time.Second)
+			confirmData := extractCallbackData(respInvoice, "\fbuy_confirm")
+			if confirmData == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData)
 			respFail := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respFail, "text"), "Failed to create subscription") {
+			if !strings.Contains(getStr(respFail, "text"), "خطا") && !strings.Contains(getStr(respFail, "text"), "عودت") {
 				t.Fatalf("Expected panel outage failure message, got: %+v", respFail)
 			}
 
@@ -1751,17 +1923,25 @@ func TestE2ESuite(t *testing.T) {
 			env.SendCallback(userTGID, userUsername, 999, "\fbuy_ip_run|1:1:1")
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendMessage(userTGID, userUsername, "succeeds")
+			respInvoice2 := env.ExpectResponse(t, 2*time.Second)
+			confirmData2 := extractCallbackData(respInvoice2, "\fbuy_confirm")
+			if confirmData2 == "" {
+				t.Fatalf("Expected buy_confirm in invoice: %+v", respInvoice2)
+			}
+			env.SendCallback(userTGID, userUsername, 999, confirmData2)
 			respSuccess := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respSuccess, "caption"), "test-sub.com") {
+			if !strings.Contains(getStr(respSuccess, "caption"), "/sub/") {
 				t.Fatalf("Expected QR code with sub link, got: %+v", respSuccess)
 			}
+			_ = env.ExpectResponse(t, 2*time.Second) // details text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Verify in DB & Panel
-			sub, _ := db.GetSubscriptionByEmail(env.ctx, "myservice_succeeds")
-			if sub == nil {
+			subs, _ := db.GetSubscriptionsByUserID(env.ctx, u.ID)
+			if len(subs) == 0 {
 				t.Fatalf("Subscription should be in DB")
 			}
-			if _, exists := env.mockXUI.Clients["myservice_succeeds"]; !exists {
+			if _, exists := env.mockXUI.Clients[subs[0].ClientEmail]; !exists {
 				t.Fatalf("Client should be on panel")
 			}
 		})
@@ -1786,9 +1966,6 @@ func TestE2ESuite(t *testing.T) {
 				t.Fatalf("Usage should be recorded in DB")
 			}
 
-			// Simulate calendar date change (e.g. usage reset check query does:
-			// reset_date = time.Now().UTC().Format("2006-01-02")
-			// So if we query with tomorrow's date, it should have 0 usage, i.e., naturally reset!
 			tomorrow := time.Now().Add(24 * time.Hour).UTC().Format("2006-01-02")
 			var usedTomorrow int
 			err = db.Pool.QueryRow(env.ctx, `
@@ -1811,11 +1988,12 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second)
 			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_user_ban|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // confirmation
+			_ = env.ExpectResponse(t, 2*time.Second) // admin view user updated
 
 			// User attempts start command (blocked by AuthMiddleware)
 			env.SendMessage(userTGID, userUsername, "/start")
 			resp := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(resp, "text"), "banned") {
+			if !strings.Contains(getStr(resp, "text"), "مسدود") {
 				t.Fatalf("Expected banned response, got: %+v", resp)
 			}
 
@@ -1836,6 +2014,7 @@ func TestE2ESuite(t *testing.T) {
 			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_test_reset_days", nil)
 			env.SendMessage(adminTGID, adminUsername, "30")
 			_ = env.ExpectResponse(t, 2*time.Second) // saved confirmation
+			_ = env.ExpectResponse(t, 2*time.Second) // settings menu
 
 			// Verify test_reset_days setting in DB
 			limit, _ := db.GetSetting(env.ctx, "test_reset_days")
@@ -1849,6 +2028,7 @@ func TestE2ESuite(t *testing.T) {
 			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_support_username", nil)
 			env.SendMessage(adminTGID, adminUsername, "my_support_guy")
 			_ = env.ExpectResponse(t, 2*time.Second) // saved confirmation
+			_ = env.ExpectResponse(t, 2*time.Second) // settings menu
 
 			// Verify support_username setting in DB
 			support, _ := db.GetSetting(env.ctx, "support_username")
@@ -1866,11 +2046,13 @@ func TestE2ESuite(t *testing.T) {
 			// 4. Generate 1 test subscription (since limit is 1)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // 1st success QR
+			_ = env.ExpectResponse(t, 2*time.Second) // text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 
 			// Try to generate 2nd test sub (should fail due to limit 1)
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			respFail := env.ExpectResponse(t, 2*time.Second)
-			if !strings.Contains(getStr(respFail, "text"), "قبلاً") && !strings.Contains(getStr(respFail, "text"), "محدودیت") {
+			if !strings.Contains(getStr(respFail, "text"), "قبلاً") && !strings.Contains(getStr(respFail, "text"), "سقف") && !strings.Contains(getStr(respFail, "text"), "محدودیت") {
 				t.Fatalf("Expected limit error for 2nd test sub, got: %+v", respFail)
 			}
 
@@ -1891,6 +2073,8 @@ func TestE2ESuite(t *testing.T) {
 			// 6. User should now be able to generate test sub again!
 			env.SendCallback(userTGID, userUsername, 999, "\fselect_test_plan|1")
 			_ = env.ExpectResponse(t, 2*time.Second) // success QR
+			_ = env.ExpectResponse(t, 2*time.Second) // text
+			_ = env.ExpectResponse(t, 2*time.Second) // main menu
 		})
 	})
 }

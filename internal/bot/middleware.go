@@ -37,6 +37,13 @@ func AuthMiddleware() telebot.MiddlewareFunc {
 					log.Printf("AuthMiddleware: Failed to create user: %v", err)
 					return c.Send("خطایی در ثبت نام شما رخ داد.")
 				}
+			} else if (c.Sender().Username != "" && user.Username != c.Sender().Username) ||
+				(c.Sender().FirstName != "" && user.FirstName != c.Sender().FirstName) ||
+				(c.Sender().LastName != "" && user.LastName != c.Sender().LastName) {
+				user.Username = c.Sender().Username
+				user.FirstName = c.Sender().FirstName
+				user.LastName = c.Sender().LastName
+				_ = db.CreateUser(context.Background(), user)
 			}
 
 			if user.Status == "banned" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -539,17 +540,19 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 	case "usage_description":
 		draft["usage_description"] = text
 	case "price":
-		val, err := strconv.ParseFloat(text, 64)
+		val, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || val < 0 {
-			return c.Send("قیمت باید صفر یا یک عدد مثبت باشد. لطفاً دوباره وارد کنید:")
+			return c.Send("قیمت باید صفر یا یک عدد مثبت (تومان) باشد. لطفاً دوباره وارد کنید:")
 		}
-		draft["base_price"] = val
+		draft["base_price"] = float64(val)
+		draft["base_price_toman"] = val
 	case "price_per_gb":
-		val, err := strconv.ParseFloat(text, 64)
+		val, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || val < 0 {
-			return c.Send("قیمت هر گیگابایت باید صفر یا مثبت باشد. لطفاً دوباره وارد کنید:")
+			return c.Send("قیمت هر گیگابایت باید صفر یا مثبت (تومان) باشد. لطفاً دوباره وارد کنید:")
 		}
-		draft["price_per_gb"] = val
+		draft["price_per_gb"] = float64(val)
+		draft["price_per_gb_toman"] = val
 	case "min_data_gb":
 		val, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || val <= 0 {
@@ -557,11 +560,12 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		}
 		draft["min_data_gb"] = val
 	case "price_per_extra_month":
-		val, err := strconv.ParseFloat(text, 64)
+		val, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || val < 0 {
-			return c.Send("قیمت هر ماه اضافی باید صفر یا یک عدد مثبت باشد:")
+			return c.Send("قیمت هر ماه اضافی باید صفر یا یک عدد مثبت (تومان) باشد:")
 		}
-		draft["price_per_extra_month"] = val
+		draft["price_per_extra_month"] = float64(val)
+		draft["price_per_extra_month_toman"] = val
 	case "ip_limits":
 		baseIP := 0
 		maxIP := 0
@@ -618,11 +622,12 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		}
 		draft["ip_limit"] = val
 	case "extra_ip":
-		val, err := strconv.ParseFloat(text, 64)
+		val, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || val < 0 {
-			return c.Send("قیمت هر کاربر همزمان اضافی باید صفر یا یک عدد مثبت باشد:")
+			return c.Send("قیمت هر کاربر همزمان اضافی باید صفر یا یک عدد مثبت (تومان) باشد:")
 		}
-		draft["price_per_extra_ip"] = val
+		draft["price_per_extra_ip"] = float64(val)
+		draft["price_per_extra_ip_toman"] = val
 	case "flow":
 		if text == "-" {
 			draft["flow"] = ""
@@ -918,35 +923,63 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 		description := draftGetString(draft, "description")
 		usageDescription := draftGetString(draft, "usage_description")
 		basePrice := draftGetFloat64(draft, "base_price")
+		basePriceToman := draftGetInt64(draft, "base_price_toman")
+		if basePathTomanVal, ok := draft["base_price_toman"].(int64); ok && basePathTomanVal > 0 {
+			basePriceToman = basePathTomanVal
+		} else if basePriceToman == 0 && basePrice > 0 {
+			basePriceToman = int64(math.Round(basePrice))
+		}
 		baseIP := draftGetInt(draft, "base_ip_limit")
 		maxIP := draftGetInt(draft, "max_ip_limit")
 		extraIP := draftGetFloat64(draft, "price_per_extra_ip")
+		extraIPToman := draftGetInt64(draft, "price_per_extra_ip_toman")
+		if extraIPTomanVal, ok := draft["price_per_extra_ip_toman"].(int64); ok && extraIPTomanVal > 0 {
+			extraIPToman = extraIPTomanVal
+		} else if extraIPToman == 0 && extraIP > 0 {
+			extraIPToman = int64(math.Round(extraIP))
+		}
 		flow := draftGetString(draft, "flow")
 		discounts := draftGetDiscounts(draft, "discount_tiers")
 		isLimited := draftGetBool(draft, "is_limited")
 		pricePerGB := draftGetFloat64(draft, "price_per_gb")
+		pricePerGBToman := draftGetInt64(draft, "price_per_gb_toman")
+		if pricePerGBTomanVal, ok := draft["price_per_gb_toman"].(int64); ok && pricePerGBTomanVal > 0 {
+			pricePerGBToman = pricePerGBTomanVal
+		} else if pricePerGBToman == 0 && pricePerGB > 0 {
+			pricePerGBToman = int64(math.Round(pricePerGB))
+		}
 		minData := draftGetInt64(draft, "min_data_gb")
 		priceExtraMonth := draftGetFloat64(draft, "price_per_extra_month")
+		priceExtraMonthToman := draftGetInt64(draft, "price_per_extra_month_toman")
+		if priceExtraMonthTomanVal, ok := draft["price_per_extra_month_toman"].(int64); ok && priceExtraMonthTomanVal > 0 {
+			priceExtraMonthToman = priceExtraMonthTomanVal
+		} else if priceExtraMonthToman == 0 && priceExtraMonth > 0 {
+			priceExtraMonthToman = int64(math.Round(priceExtraMonth))
+		}
 
 		plan := &db.PaidPlan{
-			ID:                 id,
-			Name:               name,
-			Description:        description,
-			UsageDescription:   usageDescription,
-			InboundIDs:         inboundIDs,
-			BasePrice:          basePrice,
-			BaseIPLimit:        baseIP,
-			MaxIPLimit:         maxIP,
-			PricePerExtraIP:    extraIP,
-			Flow:               flow,
-			DiscountTiers:      discounts,
-			IsGlobal:           isGlobal,
-			Enabled:            true,
-			SyncSubs:           draftGetBool(draft, "sync_subs"),
-			IsLimited:          isLimited,
-			PricePerGB:         pricePerGB,
-			MinDataGB:          minData,
-			PricePerExtraMonth: priceExtraMonth,
+			ID:                      id,
+			Name:                    name,
+			Description:             description,
+			UsageDescription:        usageDescription,
+			InboundIDs:              inboundIDs,
+			BasePrice:               basePrice,
+			BasePriceToman:          basePriceToman,
+			BaseIPLimit:             baseIP,
+			MaxIPLimit:              maxIP,
+			PricePerExtraIP:         extraIP,
+			PricePerExtraIPToman:    extraIPToman,
+			Flow:                    flow,
+			DiscountTiers:           discounts,
+			IsGlobal:                isGlobal,
+			Enabled:                 true,
+			SyncSubs:                draftGetBool(draft, "sync_subs"),
+			IsLimited:               isLimited,
+			PricePerGB:              pricePerGB,
+			PricePerGBToman:         pricePerGBToman,
+			MinDataGB:               minData,
+			PricePerExtraMonth:      priceExtraMonth,
+			PricePerExtraMonthToman: priceExtraMonthToman,
 		}
 
 		if id > 0 {
@@ -1680,7 +1713,8 @@ func parseDiscounts(text string) ([]db.DiscountTier, error) {
 		if err != nil || percent < 0 || percent > 100 {
 			return nil, err
 		}
-		tiers = append(tiers, db.DiscountTier{Months: months, Percent: percent})
+		bp := int64(math.Round(percent * 100))
+		tiers = append(tiers, db.DiscountTier{Months: months, Percent: percent, BasisPoints: bp})
 	}
 	return tiers, nil
 }
