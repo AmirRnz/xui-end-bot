@@ -59,7 +59,7 @@ func HandleAdminPlans(c telebot.Context) error {
 		if !p.Enabled {
 			enabledMark = "🔴"
 		}
-		text.WriteString(fmt.Sprintf("%s #%d %s (قیمت پایه %s تومان، %d-%d کاربر همزمان)\n",
+		text.WriteString(fmt.Sprintf("%s #%d %s (قیمت پایه %s، %d-%d کاربر همزمان)\n",
 			enabledMark, p.ID, p.Name, persian.FormatMoney(p.BasePriceToman), p.BaseIPLimit, p.MaxIPLimit))
 	}
 
@@ -317,12 +317,12 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 	var priceBlock string
 	if isLimited {
 		priceBlock = fmt.Sprintf(
-			"💵 قیمت هر گیگابایت: %s تومان\n"+
+			"💵 قیمت هر گیگابایت: %s\n"+
 				"💾 حداقل حجم: %d گیگابایت\n"+
-				"⏱️ قیمت هر ماه اضافه: %s تومان\n",
+				"⏱️ قیمت هر ماه اضافه: %s\n",
 			persian.FormatMoney(pricePerGBToman), minDataGB, persian.FormatMoney(pricePerExtraMonthToman))
 	} else {
-		priceBlock = fmt.Sprintf("💵 قیمت پایه: %s تومان\n", persian.FormatMoney(basePriceToman))
+		priceBlock = fmt.Sprintf("💵 قیمت پایه: %s\n", persian.FormatMoney(basePriceToman))
 	}
 
 	var ipLabel string
@@ -345,7 +345,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		"📊 نوع طرح: %s\n"+
 		"%s"+
 		"🌐 محدودیت آی‌پی همزمان: %s\n"+
-		"💲 قیمت هر آی‌پی اضافی: %s تومان\n"+
+		"💲 قیمت هر آی‌پی اضافی: %s\n"+
 		"⚡ فلو: %s\n"+
 		"🏷️ تخفیف‌ها: %s\n"+
 		"👥 دسترسی: %s\n"+
@@ -1326,10 +1326,10 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 
 		var priceBlock string
 		if plan.IsLimited {
-			priceBlock = fmt.Sprintf("نوع: حجمی (محدود)\nقیمت/گیگابایت: %s تومان\nحداقل حجم: %d گیگابایت\nقیمت هر ماه اضافه: %s تومان",
+			priceBlock = fmt.Sprintf("نوع: حجمی (محدود)\nقیمت/گیگابایت: %s\nحداقل حجم: %d گیگابایت\nقیمت هر ماه اضافه: %s",
 				persian.FormatMoney(plan.PricePerGBToman), plan.MinDataGB, persian.FormatMoney(plan.PricePerExtraMonthToman))
 		} else {
-			priceBlock = fmt.Sprintf("نوع: نامحدود\nقیمت پایه: %s تومان", persian.FormatMoney(plan.BasePriceToman))
+			priceBlock = fmt.Sprintf("نوع: نامحدود\nقیمت پایه: %s", persian.FormatMoney(plan.BasePriceToman))
 		}
 
 		ipLabel := fmt.Sprintf("%d-%d کاربر همزمان", plan.BaseIPLimit, plan.MaxIPLimit)
@@ -1340,7 +1340,7 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 		text = fmt.Sprintf("💼 **طرح خرید #%d**\n\n"+
 			"📝 نام: %s\n📝 توضیحات: %s\n📝 راهنما: %s\n⚡ وضعیت فعال: %t\n👥 عمومی: %t\n"+
 			"📡 اینباندها: %s\n%s\n🌐 محدودیت آی‌پی همزمان: %s\n"+
-			"💲 قیمت هر کاربر اضافه: %s تومان\n⚡ فلو: %s\n🏷️ تخفیف‌ها: %s\n👥 کاربران اختصاصی: %v",
+			"💲 قیمت هر کاربر اضافه: %s\n⚡ فلو: %s\n🏷️ تخفیف‌ها: %s\n👥 کاربران اختصاصی: %v",
 			plan.ID, plan.Name, plan.Description, plan.UsageDescription, plan.Enabled, plan.IsGlobal,
 			inboundLabel(plan.InboundIDs), priceBlock, ipLabel,
 			persian.FormatMoney(plan.PricePerExtraIPToman), plan.Flow, formatDiscountLabel(plan.DiscountTiers), access)

@@ -45,6 +45,9 @@ func (c *Client) doRequest(method, endpoint string, body any, responseObj any) e
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusNotFound {
+			return &NotFoundError{StatusCode: resp.StatusCode, Message: string(bodyBytes)}
+		}
 		return fmt.Errorf("API returned non-2xx status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 	if len(bytes.TrimSpace(bodyBytes)) == 0 {

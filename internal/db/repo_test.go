@@ -407,12 +407,13 @@ func TestPlanSyncSubs(t *testing.T) {
 
 func TestPurchaseRollbackAndClaim(t *testing.T) {
 	ctx := setupTestDB(t)
+	var purchaseRequestID int64
 
 	// Clean up after test
 	defer func() {
 		if Pool != nil {
 			_, _ = Pool.Exec(ctx, "DELETE FROM purchase_requests WHERE client_email LIKE 'test_claim_%'")
-			_, _ = Pool.Exec(ctx, "DELETE FROM transactions WHERE reference_type = 'purchase_request'")
+			_, _ = Pool.Exec(ctx, "DELETE FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", purchaseRequestID)
 			_, _ = Pool.Exec(ctx, "DELETE FROM bot_users WHERE telegram_id = 999999998")
 		}
 	}()
@@ -447,6 +448,7 @@ func TestPurchaseRollbackAndClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create purchase request: %v", err)
 	}
+	purchaseRequestID = req.ID
 
 	// 1. Verify HasPendingClaimRequest
 	hasPending, err := HasPendingClaimRequest(ctx, "sub_claim_123")
@@ -506,13 +508,13 @@ func TestPurchaseRollbackAndClaim(t *testing.T) {
 		t.Fatalf("expected approved payment and retryable provisioning, got status %q provisioning %q AdminID %v", rolledReq.Status, rolledReq.ProvisioningStatus, rolledReq.AdminID)
 	}
 
-	// Verify the original financial transaction remains intact.
+	// Legacy claim adoption never creates a financial transaction.
 	err = Pool.QueryRow(ctx, "SELECT count(*) FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", req.ID).Scan(&txCount)
 	if err != nil {
 		t.Fatalf("failed to count transactions after rollback: %v", err)
 	}
-	if txCount != 1 {
-		t.Fatalf("expected 1 transaction after provisioning failure, got %d", txCount)
+	if txCount != 0 {
+		t.Fatalf("expected no financial transaction for legacy claim adoption after provisioning failure, got %d", txCount)
 	}
 
 	// The request remains approved, so it is no longer pending.

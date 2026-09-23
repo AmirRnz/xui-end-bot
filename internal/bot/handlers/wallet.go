@@ -46,7 +46,7 @@ func HandleWalletFlow(c telebot.Context) error {
 	}
 	rows := append(row, menu.Row(menu.Data("« بازگشت", "menu_main")))
 	menu.Inline(rows...)
-	return maybeEditOrSend(c, fmt.Sprintf("👛 **موجودی کیف پول شما:** %s تومان", persian.FormatMoney(user.WalletBalance)), menu)
+	return maybeEditOrSend(c, fmt.Sprintf("👛 **موجودی کیف پول شما:** %s", persian.FormatMoney(user.WalletBalance)), menu)
 }
 
 func HandleTopupInstructions(c telebot.Context) error {
@@ -499,7 +499,7 @@ func HandleAdminRejectPurchase(c telebot.Context) error {
 		case "claim":
 			actionLabel = "ثبت اشتراک قدیمی"
 		}
-		msg := fmt.Sprintf("❌ درخواست پرداخت مستقیم شما برای **%s** به مبلغ %s تومان توسط ادمین رد شد. لطفا رسید واریزی خود را بررسی کنید یا با پشتیبانی در ارتباط باشید.", actionLabel, persian.FormatMoney(purchaseAmountToman(req)))
+		msg := fmt.Sprintf("❌ درخواست پرداخت مستقیم شما برای **%s** به مبلغ %s توسط ادمین رد شد. لطفا رسید واریزی خود را بررسی کنید یا با پشتیبانی در ارتباط باشید.", actionLabel, persian.FormatMoney(purchaseAmountToman(req)))
 		_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, FormatMarkdown(msg), telebot.ModeMarkdown)
 	}
 
@@ -557,7 +557,7 @@ func extendSubscriptionFromApprovedRequest(user *db.User, sub *db.Subscription, 
 		return fmt.Errorf("خطا در ذخیره‌سازی دیتابیس: %w", err)
 	}
 
-	msg := fmt.Sprintf("✅ پرداخت شما تایید و اشتراک **%s** به مدت %d ماه تمدید شد.\nتاریخ انقضای جدید: %s\nمبلغ پرداخت شده: %s تومان.",
+	msg := fmt.Sprintf("✅ پرداخت شما تایید و اشتراک **%s** به مدت %d ماه تمدید شد.\nتاریخ انقضای جدید: %s\nمبلغ پرداخت شده: %s.",
 		sub.DisplayName, req.Months, newExpiryLabel, persian.FormatMoney(purchaseAmountToman(req)))
 	_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, FormatMarkdown(msg), telebot.ModeMarkdown)
 	return nil
@@ -576,7 +576,7 @@ func upgradeSubscriptionIPFromApprovedRequest(user *db.User, sub *db.Subscriptio
 		return fmt.Errorf("خطا در ذخیره‌سازی دیتابیس: %w", err)
 	}
 
-	msg := fmt.Sprintf("✅ پرداخت شما تایید و سقف کاربر همزمان اشتراک **%s** به %s دستگاه ارتقا یافت.\nهزینه ارتقا پرداخت شده: %s تومان.",
+	msg := fmt.Sprintf("✅ پرداخت شما تایید و سقف کاربر همزمان اشتراک **%s** به %s دستگاه ارتقا یافت.\nهزینه ارتقا پرداخت شده: %s.",
 		sub.DisplayName, formatIPLimit(req.IPLimit), persian.FormatMoney(purchaseAmountToman(req)))
 	_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, FormatMarkdown(msg), telebot.ModeMarkdown)
 	return nil
@@ -614,8 +614,8 @@ func ProcessManualCreditAmount(c telebot.Context, amountText string) error {
 		return c.Send("خطا در افزایش موجودی کاربر.")
 	}
 	bot.FSM.ClearState(admin.TelegramID)
-	_, _ = bot.Bot.Send(&telebot.User{ID: target.TelegramID}, fmt.Sprintf("کیف پول شما به مبلغ %s تومان شارژ شد.", persian.FormatMoney(amount)))
-	_ = c.Send(fmt.Sprintf("✅ کیف پول کاربر #%d به مبلغ %s تومان شارژ شد.", target.ID, persian.FormatMoney(amount)))
+	_, _ = bot.Bot.Send(&telebot.User{ID: target.TelegramID}, fmt.Sprintf("کیف پول شما به مبلغ %s شارژ شد.", persian.FormatMoney(amount)))
+	_ = c.Send(fmt.Sprintf("✅ کیف پول کاربر #%d به مبلغ %s شارژ شد.", target.ID, persian.FormatMoney(amount)))
 	target, _ = db.GetUserByID(context.Background(), targetID)
 	if target != nil {
 		return showAdminViewUser(c, target)
