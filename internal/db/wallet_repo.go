@@ -188,8 +188,16 @@ func DebitWalletForSubscriptionMutation(ctx context.Context, intent WalletSubscr
 		return ErrSubscriptionMutationStale
 	}
 	if status == SubscriptionStatusCancelled || status == SubscriptionStatusDeleted || status == SubscriptionStatusReconciliation ||
+		status == SubscriptionStatusCancelRequested || status == SubscriptionStatusDeprovisioning ||
 		desiredIPLimit != nil || desiredExpireTime != nil || desiredIsActive != nil {
 		return ErrSubscriptionMutationInProgress
+	}
+	if intent.DesiredExpireTime != nil && intent.DesiredIPLimit == nil {
+		if !IsExtensionEligibleState(status, currentActive, currentExpireTime, time.Now().UTC()) {
+			return ErrSubscriptionMutationInvalid
+		}
+	} else if status != SubscriptionStatusActive || !currentActive {
+		return ErrSubscriptionMutationInvalid
 	}
 	if currentIPLimit != intent.ExpectedIPLimit || !nullableInt64Equal(currentExpireTime, intent.ExpectedExpireTime) || currentActive != intent.ExpectedIsActive {
 		return ErrSubscriptionMutationStale

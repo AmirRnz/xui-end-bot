@@ -11,6 +11,7 @@ func RegisterAdminMenu(b *telebot.Bot, auth telebot.MiddlewareFunc, admin telebo
 	b.Handle("\fadmin_flow", HandleAdminFlow, auth, admin)
 	b.Handle("\fadmin_pending_topups", HandleAdminPendingTopups, auth, admin)
 	b.Handle("\fadmin_pending_claims", HandleAdminPendingClaims, auth, admin)
+	b.Handle("\fadmin_manual_payment_reviews", HandleAdminManualPaymentReviews, auth, admin)
 
 	RegisterAdminUsers(b, auth, admin)
 	RegisterAdminSettings(b, auth, admin)
@@ -30,6 +31,7 @@ func HandleAdminMenu(c telebot.Context) error {
 			menu.Data(persian.BtnAdminTopups, "admin_pending_topups"),
 			menu.Data(persian.BtnAdminClaims, "admin_pending_claims"),
 		),
+		menu.Row(menu.Data("🧾 رسیدهای نیازمند بررسی دستی", "admin_manual_payment_reviews")),
 		menu.Row(menu.Data(persian.BtnAdminReconcile, "admin_reconcile")),
 		menu.Row(menu.Data(persian.BtnBack, "menu_main")),
 	)

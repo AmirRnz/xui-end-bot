@@ -463,7 +463,9 @@ func HandleSubscriptionLimitSetWallet(c telebot.Context) error {
 		case errors.Is(err, db.ErrWalletOperationConflict):
 			log.Printf("[CRITICAL] wallet operation key collision while upgrading subscription %d for user %d: %v", sub.ID, user.ID, err)
 			return c.Send("شناسه مالی با عملیات دیگری برخورد کرده است؛ برای جلوگیری از برداشت تکراری، این درخواست متوقف شد و نیازمند بررسی پشتیبانی است.")
-		case errors.Is(err, db.ErrSubscriptionMutationStale), errors.Is(err, db.ErrSubscriptionMutationInProgress), errors.Is(err, db.ErrSubscriptionMutationInvalid):
+		case errors.Is(err, db.ErrSubscriptionMutationInProgress):
+			return c.Send("پرداخت یا تغییر قبلی این سرویس هنوز در حال بررسی یا همگام‌سازی است. موجودی کسر نشد؛ لطفاً تا پایان همان درخواست صبر کنید.")
+		case errors.Is(err, db.ErrSubscriptionMutationStale), errors.Is(err, db.ErrSubscriptionMutationInvalid):
 			return c.Send("وضعیت سرویس یا طرح تغییر کرده است؛ موجودی کسر نشد. لطفا منو را دوباره باز کنید.")
 		default:
 			log.Printf("[ERROR] failed to queue wallet IP upgrade for subscription %d: %v", sub.ID, err)
@@ -514,6 +516,7 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 
 	callbackToken := strings.TrimSpace(parts[2])
 	subID64 := int64(sub.ID)
+	planID64 := int64(plan.ID)
 	expectedExpiry := int64(0)
 	if sub.ExpireTime != nil {
 		expectedExpiry = *sub.ExpireTime
@@ -536,6 +539,7 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 		IntentToken:          callbackToken,
 		ActionType:           "upgrade_ip",
 		SubscriptionID:       &subID64,
+		PlanID:               &planID64,
 		AmountToman:          cost,
 		Months:               months,
 		IPLimit:              newLimit,
@@ -546,7 +550,7 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 	createdIntent, err := db.CreatePaymentIntent(context.Background(), intent)
 	if err != nil {
 		log.Printf("[INTENT] Failed to create payment intent for user %d IP upgrade: %v", user.ID, err)
-		return paymentIntentCreateFailure(c, user, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
+		return paymentIntentCreateFailureForError(c, user, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.", err)
 	}
 	fsmData["intent_id"] = createdIntent.ID
 	fsmData["operation_token"] = createdIntent.IntentToken
@@ -578,6 +582,9 @@ func HandleSubscriptionExtendMenu(c telebot.Context) error {
 	}
 	if sub.PlanType != db.PlanTypePaid {
 		return c.Send("تمدید فقط برای سرویس‌های خریداری شده امکان‌پذیر است.")
+	}
+	if !db.IsExtensionEligibleState(sub.Status, sub.IsActive, sub.ExpireTime, nowUTC()) {
+		return c.Send("وضعیت سرویس برای تمدید مناسب نیست؛ سرویس‌های لغو شده یا در حال تغییر قابل تمدید نیستند.")
 	}
 	plan, err := paidPlanForSub(sub)
 	if err != nil || plan == nil {
@@ -672,6 +679,9 @@ func showExtendConfirmation(c telebot.Context, user *db.User, subID int, months 
 	if err != nil || sub == nil || sub.UserID != user.ID {
 		return c.Send("اشتراک یافت نشد.")
 	}
+	if !db.IsExtensionEligibleState(sub.Status, sub.IsActive, sub.ExpireTime, nowUTC()) {
+		return c.Send("وضعیت سرویس برای تمدید مناسب نیست؛ سرویس‌های لغو شده یا در حال تغییر قابل تمدید نیستند.")
+	}
 	plan, err := paidPlanForSub(sub)
 	if err != nil || plan == nil {
 		return c.Send("طرح مرتبط یافت نشد.")
@@ -747,19 +757,16 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 	}
 
 	now := nowUTC()
-	var newExpiryMilli int64
+	newExpiryMilli, err := db.CalculateExtendedExpiry(sub.ExpireTime, months, now)
+	if err != nil {
+		return c.Send("تاریخ انقضای فعلی برای تمدید معتبر نیست؛ درخواست ثبت نشد.")
+	}
 	var newExpiryLabel string
-	if sub.ExpireTime != nil && *sub.ExpireTime < 0 {
-		newDuration := -(*sub.ExpireTime) + int64(months)*30*24*3600*1000
-		newExpiryMilli = -newDuration
+	if newExpiryMilli < 0 {
+		newDuration := -newExpiryMilli
 		newExpiryLabel = fmt.Sprintf("شروع پس از اولین اتصال (مدت زمان %d روز)", newDuration/(24*3600*1000))
 	} else {
-		endDate := sub.EndDate
-		if endDate.Before(now) {
-			endDate = now
-		}
-		endDate = endDate.Add(time.Duration(months) * 30 * 24 * time.Hour)
-		newExpiryMilli = endDate.UnixMilli()
+		endDate := time.UnixMilli(newExpiryMilli).UTC()
 		newExpiryLabel = endDate.Format("2006-01-02")
 	}
 	desiredActive := true
@@ -780,7 +787,9 @@ func HandleExtendSubscriptionWallet(c telebot.Context) error {
 		case errors.Is(err, db.ErrWalletOperationConflict):
 			log.Printf("[CRITICAL] wallet operation key collision while extending subscription %d for user %d: %v", sub.ID, user.ID, err)
 			return c.Send("شناسه مالی با عملیات دیگری برخورد کرده است؛ برای جلوگیری از برداشت تکراری، این درخواست متوقف شد و نیازمند بررسی پشتیبانی است.")
-		case errors.Is(err, db.ErrSubscriptionMutationStale), errors.Is(err, db.ErrSubscriptionMutationInProgress), errors.Is(err, db.ErrSubscriptionMutationInvalid):
+		case errors.Is(err, db.ErrSubscriptionMutationInProgress):
+			return c.Send("پرداخت یا تغییر قبلی این سرویس هنوز در حال بررسی یا همگام‌سازی است. موجودی کسر نشد؛ لطفاً تا پایان همان درخواست صبر کنید.")
+		case errors.Is(err, db.ErrSubscriptionMutationStale), errors.Is(err, db.ErrSubscriptionMutationInvalid):
 			return c.Send("وضعیت سرویس یا طرح تغییر کرده است؛ موجودی کسر نشد. لطفا فرآیند تمدید را دوباره آغاز کنید.")
 		default:
 			log.Printf("[ERROR] failed to queue wallet extension for subscription %d: %v", sub.ID, err)
@@ -814,7 +823,7 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 	if err != nil || sub == nil || sub.UserID != user.ID || sub.ID != int(subID) {
 		return c.Send("اشتراک یافت نشد.")
 	}
-	if sub.Status != db.SubscriptionStatusActive || !sub.IsActive || sub.PlanType != db.PlanTypePaid {
+	if sub.PlanType != db.PlanTypePaid || !db.IsExtensionEligibleState(sub.Status, sub.IsActive, sub.ExpireTime, nowUTC()) {
 		return c.Send("وضعیت سرویس برای تمدید مناسب نیست؛ لطفا منو را دوباره باز کنید.")
 	}
 	plan, err := paidPlanForSub(sub)
@@ -869,7 +878,7 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 	createdIntent, err := db.CreatePaymentIntent(context.Background(), extendIntent)
 	if err != nil {
 		log.Printf("[INTENT] Failed to create payment intent for user %d extend: %v", user.ID, err)
-		return paymentIntentCreateFailure(c, user, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
+		return paymentIntentCreateFailureForError(c, user, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.", err)
 	}
 	extendData["intent_id"] = createdIntent.ID
 	extendData["operation_token"] = createdIntent.IntentToken
