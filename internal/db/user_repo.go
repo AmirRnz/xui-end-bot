@@ -11,6 +11,9 @@ import (
 func CreateUser(ctx context.Context, u *User) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
+	if Pool == nil {
+		return errors.New("database pool is not initialized")
+	}
 
 	if u.Language == "" {
 		u.Language = "en"
@@ -21,18 +24,77 @@ func CreateUser(ctx context.Context, u *User) error {
 
 	cleanUsername := strings.TrimPrefix(strings.TrimSpace(u.Username), "@")
 
-	// If there is an existing placeholder user record created by admin via username (telegram_id < 0), update it with real telegram_id
+	// Claim an explicitly pre-created admin placeholder by username. Lock and
+	// update it in one transaction so a failed update cannot return a user that
+	// still has a negative Telegram ID, and ambiguous usernames are never claimed.
 	if cleanUsername != "" && u.TelegramID > 0 {
-		var placeholderID int64
-		err := Pool.QueryRow(ctx, `SELECT id FROM bot_users WHERE LOWER(username) = LOWER($1) AND telegram_id < 0 LIMIT 1`, cleanUsername).Scan(&placeholderID)
-		if err == nil && placeholderID > 0 {
-			_, _ = Pool.Exec(ctx, `UPDATE bot_users SET telegram_id = $1, username = $2, first_name = $3, last_name = $4, updated_at = NOW() WHERE id = $5`,
-				u.TelegramID, cleanUsername, u.FirstName, u.LastName, placeholderID)
-			uFound, err := GetUserByID(ctx, placeholderID)
-			if err == nil && uFound != nil {
-				*u = *uFound
+		var existingID int64
+		existingErr := Pool.QueryRow(ctx, `SELECT id FROM bot_users WHERE telegram_id = $1`, u.TelegramID).Scan(&existingID)
+		if existingErr != nil && !errors.Is(existingErr, pgx.ErrNoRows) {
+			return existingErr
+		}
+		if errors.Is(existingErr, pgx.ErrNoRows) {
+			tx, err := Pool.Begin(ctx)
+			if err != nil {
+				return err
 			}
-			return nil
+			defer tx.Rollback(ctx)
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext(LOWER($1))::bigint)`, cleanUsername); err != nil {
+				return err
+			}
+
+			rows, err := tx.Query(ctx, `
+				SELECT id FROM bot_users
+				WHERE LOWER(username) = LOWER($1) AND telegram_id < 0
+				ORDER BY id
+				LIMIT 2
+				FOR UPDATE
+			`, cleanUsername)
+			if err != nil {
+				return err
+			}
+			var placeholderIDs []int64
+			for rows.Next() {
+				var id int64
+				if err := rows.Scan(&id); err != nil {
+					rows.Close()
+					return err
+				}
+				placeholderIDs = append(placeholderIDs, id)
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return err
+			}
+			rows.Close()
+
+			switch len(placeholderIDs) {
+			case 0:
+				if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+					return err
+				}
+			case 1:
+				updated := &User{}
+				err := tx.QueryRow(ctx, `
+					UPDATE bot_users
+					SET telegram_id = $1, username = $2, first_name = $3, last_name = $4, updated_at = NOW()
+					WHERE id = $5 AND telegram_id < 0
+					RETURNING id, telegram_id, username, first_name, last_name, language, status, service_name, wallet_balance, created_at, updated_at
+				`, u.TelegramID, cleanUsername, u.FirstName, u.LastName, placeholderIDs[0]).Scan(
+					&updated.ID, &updated.TelegramID, &updated.Username, &updated.FirstName, &updated.LastName,
+					&updated.Language, &updated.Status, &updated.ServiceName, &updated.WalletBalance, &updated.CreatedAt, &updated.UpdatedAt,
+				)
+				if err != nil {
+					return err
+				}
+				if err := tx.Commit(ctx); err != nil {
+					return err
+				}
+				*u = *updated
+				return nil
+			default:
+				return errors.New("multiple admin placeholders match this Telegram username")
+			}
 		}
 	}
 
@@ -60,8 +122,36 @@ func GetUserByUsername(ctx context.Context, username string) (*User, error) {
 		return nil, nil
 	}
 
-	query := `SELECT id, telegram_id, username, first_name, last_name, language, status, service_name, wallet_balance, created_at, updated_at FROM bot_users WHERE LOWER(username) = LOWER($1)`
-	return scanUser(Pool.QueryRow(ctx, query, cleanUsername))
+	if Pool == nil {
+		return nil, errors.New("database pool is not initialized")
+	}
+	query := `
+		SELECT id, telegram_id, username, first_name, last_name, language, status, service_name, wallet_balance, created_at, updated_at
+		FROM bot_users WHERE LOWER(username) = LOWER($1)
+		ORDER BY id
+		LIMIT 2
+	`
+	rows, err := Pool.Query(ctx, query, cleanUsername)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var user *User
+	for rows.Next() {
+		candidate := &User{}
+		if err := rows.Scan(&candidate.ID, &candidate.TelegramID, &candidate.Username, &candidate.FirstName, &candidate.LastName, &candidate.Language, &candidate.Status, &candidate.ServiceName, &candidate.WalletBalance, &candidate.CreatedAt, &candidate.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if user != nil {
+			return nil, errors.New("multiple users match this Telegram username")
+		}
+		user = candidate
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 func GetUserByTelegramID(ctx context.Context, telegramID int64) (*User, error) {

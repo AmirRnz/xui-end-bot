@@ -13,7 +13,7 @@ func AuthMiddleware() telebot.MiddlewareFunc {
 	return func(next telebot.HandlerFunc) telebot.HandlerFunc {
 		return func(c telebot.Context) error {
 			if c.Sender() == nil {
-				return next(c)
+				return nil
 			}
 
 			telegramID := c.Sender().ID
@@ -43,7 +43,9 @@ func AuthMiddleware() telebot.MiddlewareFunc {
 				user.Username = c.Sender().Username
 				user.FirstName = c.Sender().FirstName
 				user.LastName = c.Sender().LastName
-				_ = db.CreateUser(context.Background(), user)
+				if err := db.CreateUser(context.Background(), user); err != nil {
+					log.Printf("AuthMiddleware: Failed to update profile for user %d: %v", telegramID, err)
+				}
 			}
 
 			if user.Status == "banned" {
@@ -59,8 +61,8 @@ func AuthMiddleware() telebot.MiddlewareFunc {
 func AdminMiddleware(adminCfg *config.AdminConfig) telebot.MiddlewareFunc {
 	return func(next telebot.HandlerFunc) telebot.HandlerFunc {
 		return func(c telebot.Context) error {
-			if c.Sender() == nil {
-				return next(c)
+			if c.Sender() == nil || adminCfg == nil {
+				return nil
 			}
 
 			isAdmin := false

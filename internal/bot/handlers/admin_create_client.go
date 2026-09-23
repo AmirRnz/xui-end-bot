@@ -732,6 +732,8 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 			targetUser, err = db.GetUserByTelegramID(ctx, cust.TelegramID)
 			if err != nil {
 				log.Printf("Error fetching user for telegram_id %d: %v", cust.TelegramID, err)
+				report.WriteString(fmt.Sprintf("❌ **%s** (%d): خطا در تعیین کاربر از پایگاه داده\n\n", cust.Name, cust.TelegramID))
+				continue
 			}
 			if targetUser == nil {
 				targetUser = &db.User{
@@ -749,6 +751,8 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 			targetUser, err = db.GetUserByUsername(ctx, cust.Username)
 			if err != nil {
 				log.Printf("Error fetching user for username %s: %v", cust.Username, err)
+				report.WriteString(fmt.Sprintf("❌ **%s** (@%s): خطا یا ابهام در تعیین کاربر از پایگاه داده\n\n", cust.Name, cust.Username))
+				continue
 			}
 			if targetUser == nil {
 				placeholderID := makePlaceholderTelegramID(cust.Username)

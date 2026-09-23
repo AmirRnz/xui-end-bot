@@ -264,6 +264,43 @@ func GetTestUsage(ctx context.Context, userID int64, planID int64) (time.Time, b
 	return updatedAt, true, nil
 }
 
+var ErrTestUsageLimitReached = errors.New("test subscription limit reached")
+
+// ReserveTestUsage atomically records a test claim before remote provisioning.
+// A zero/non-positive reset period allows exactly one claim for the user/plan.
+func ReserveTestUsage(ctx context.Context, userID int64, planID int64, resetDays int) error {
+	ctx, cancel := dbCtx(ctx)
+	defer cancel()
+
+	var usedCount int
+	err := Pool.QueryRow(ctx, `
+		INSERT INTO test_usage (user_id, plan_id, used_count, reset_date)
+		VALUES ($1, $2, 1, '2000-01-01'::DATE)
+		ON CONFLICT (user_id, plan_id, reset_date)
+		DO UPDATE SET used_count = test_usage.used_count + 1, updated_at = NOW()
+		WHERE $3 > 0
+		  AND test_usage.updated_at <= NOW() - ($3 * INTERVAL '1 day')
+		RETURNING used_count
+	`, userID, planID, resetDays).Scan(&usedCount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrTestUsageLimitReached
+	}
+	return err
+}
+
+// ReleaseTestUsage removes a reservation only when provisioning is known not
+// to have created a remote client.
+func ReleaseTestUsage(ctx context.Context, userID int64, planID int64) error {
+	ctx, cancel := dbCtx(ctx)
+	defer cancel()
+
+	_, err := Pool.Exec(ctx, `
+		DELETE FROM test_usage
+		WHERE user_id = $1 AND plan_id = $2 AND reset_date = '2000-01-01'::DATE
+	`, userID, planID)
+	return err
+}
+
 func IncrementTestUsage(ctx context.Context, userID int64, planID int64, increment int) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()

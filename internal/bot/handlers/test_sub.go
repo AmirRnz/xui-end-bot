@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -37,6 +38,7 @@ func HandleTestSubFlow(c telebot.Context) error {
 
 	plans, err := db.GetTestPlansForUser(context.Background(), user.ID, false)
 	if err != nil {
+		log.Printf("failed to load test plans for user %d: %v", user.ID, err)
 		return c.Send("خطا در بارگذاری طرح‌های تست.")
 	}
 	if len(plans) == 0 {
@@ -48,14 +50,22 @@ func HandleTestSubFlow(c telebot.Context) error {
 
 	menu := &telebot.ReplyMarkup{}
 	rows := make([]telebot.Row, 0, len(plans)+1)
-	resetDays := getTestResetDays()
+	resetDays, err := getTestResetDays()
+	if err != nil {
+		log.Printf("failed to read test reset setting: %v", err)
+		return c.Send("خطا در بارگذاری تنظیمات طرح تست.")
+	}
 	for _, plan := range plans {
-		updatedAt, exists, _ := db.GetTestUsage(context.Background(), user.ID, plan.ID)
+		updatedAt, exists, err := db.GetTestUsage(context.Background(), user.ID, plan.ID)
+		if err != nil {
+			log.Printf("failed to read test usage for user %d plan %d: %v", user.ID, plan.ID, err)
+			return c.Send("خطا در بررسی سهمیه تست. لطفا کمی بعد تلاش کنید.")
+		}
 
 		canClaim := true
 		var nextAvailable time.Time
 		if exists && resetDays > 0 {
-			nextAvailable = updatedAt.Add(time.Duration(resetDays) * 24 * time.Hour)
+			nextAvailable = updatedAt.AddDate(0, 0, resetDays)
 			if time.Now().Before(nextAvailable) {
 				canClaim = false
 			}
@@ -67,7 +77,7 @@ func HandleTestSubFlow(c telebot.Context) error {
 			statusText = "مجاز به دریافت"
 			btnLabel = plan.Name
 		} else {
-			statusText = fmt.Sprintf("قبلاً دریافت شده (دریافت مجدد از: %s)", nextAvailable.Format("2006-01-02 15:04 UTC"))
+			statusText = fmt.Sprintf("قبلاً دریافت شده (دریافت مجدد از: %s)", nextAvailable.UTC().Format("2006-01-02 15:04 UTC"))
 			btnLabel = fmt.Sprintf("%s (غیرمجاز)", plan.Name)
 		}
 
@@ -97,25 +107,17 @@ func HandleSelectTestPlan(c telebot.Context) error {
 		return c.Send("طرح تست نامعتبر است.")
 	}
 	plan, err := db.GetTestPlanByID(context.Background(), planID)
-	if err != nil || plan == nil || !plan.Enabled {
+	if err != nil {
+		log.Printf("failed to load test plan %d: %v", planID, err)
+		return c.Send("خطا در بارگذاری طرح تست.")
+	}
+	if plan == nil || !plan.Enabled {
 		return c.Send("طرح تست یافت نشد.")
 	}
 
 	user := userFromContext(c)
 	if user == nil {
 		return c.Send("کاربر یافت نشد.")
-	}
-
-	updatedAt, exists, _ := db.GetTestUsage(context.Background(), user.ID, plan.ID)
-	resetDays := getTestResetDays()
-	if exists && resetDays > 0 {
-		nextAvailable := updatedAt.Add(time.Duration(resetDays) * 24 * time.Hour)
-		if time.Now().Before(nextAvailable) {
-			return c.Respond(&telebot.CallbackResponse{
-				Text:      fmt.Sprintf("شما قبلاً این طرح تست را دریافت کرده‌اید. امکان دریافت مجدد در تاریخ %s وجود دارد.", nextAvailable.Format("2006-01-02 15:04 UTC")),
-				ShowAlert: true,
-			})
-		}
 	}
 
 	email := fmt.Sprintf("test_%s_%s", randomName(), randomToken(4))
@@ -146,20 +148,8 @@ func HandleMultipleTestsRandom(c telebot.Context) error {
 	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
 }
 
-func ProcessMultipleTestsBaseName(c telebot.Context, baseName string) error {
-	return c.Send("این امکان غیرفعال شده است.")
-}
-
-func ProcessMultipleTestsCount(c telebot.Context, countStr string) error {
-	return c.Send("این امکان غیرفعال شده است.")
-}
-
 func HandleMultipleTestsRun(c telebot.Context) error {
 	return c.Respond(&telebot.CallbackResponse{Text: "این امکان غیرفعال شده است.", ShowAlert: true})
-}
-
-func generateMultipleTests(c telebot.Context, user *db.User, planID int64, count int, naming, base string) error {
-	return c.Send("این امکان غیرفعال شده است.")
 }
 
 func generateTestSubscription(c telebot.Context, user *db.User, planID int64, email string) error {
@@ -167,30 +157,57 @@ func generateTestSubscription(c telebot.Context, user *db.User, planID int64, em
 	defer unlock()
 
 	plan, err := db.GetTestPlanByID(context.Background(), planID)
-	if err != nil || plan == nil || !plan.Enabled {
+	if err != nil {
+		log.Printf("failed to load test plan %d: %v", planID, err)
+		return c.Send("خطا در بارگذاری طرح تست.")
+	}
+	if plan == nil || !plan.Enabled {
 		return c.Send("طرح تست یافت نشد.")
 	}
-	updatedAt, exists, _ := db.GetTestUsage(context.Background(), user.ID, plan.ID)
-	resetDays := getTestResetDays()
-	if exists && resetDays > 0 {
-		nextAvailable := updatedAt.Add(time.Duration(resetDays) * 24 * time.Hour)
-		if time.Now().Before(nextAvailable) {
-			return c.Send(fmt.Sprintf("محدودیت تست‌های رایگان شما به پایان رسیده است. امکان دریافت مجدد در تاریخ %s وجود دارد.", nextAvailable.Format("2006-01-02 15:04 UTC")))
-		}
+	resetDays, err := getTestResetDays()
+	if err != nil {
+		log.Printf("failed to read test reset setting: %v", err)
+		return c.Send("خطا در بررسی سهمیه تست. لطفا کمی بعد تلاش کنید.")
 	}
-	if err := createAndSendTest(c, user, plan, email); err != nil {
+	if err := db.ReserveTestUsage(context.Background(), user.ID, plan.ID, resetDays); err != nil {
+		if errors.Is(err, db.ErrTestUsageLimitReached) {
+			updatedAt, exists, usageErr := db.GetTestUsage(context.Background(), user.ID, plan.ID)
+			if usageErr == nil && exists && resetDays > 0 {
+				nextAvailable := updatedAt.AddDate(0, 0, resetDays)
+				return c.Send(fmt.Sprintf("محدودیت تست‌های رایگان شما به پایان رسیده است. امکان دریافت مجدد در تاریخ %s وجود دارد.", nextAvailable.UTC().Format("2006-01-02 15:04 UTC")))
+			}
+			if usageErr != nil {
+				log.Printf("failed to read exhausted test usage for user %d plan %d: %v", user.ID, plan.ID, usageErr)
+			}
+			return c.Send("شما قبلا این طرح تست را دریافت کرده‌اید.")
+		}
+		log.Printf("failed to reserve test usage for user %d plan %d: %v", user.ID, plan.ID, err)
+		return c.Send("خطا در ثبت سهمیه تست. لطفا کمی بعد تلاش کنید.")
+	}
+
+	created, safeToRelease, err := createAndSendTest(c, user, plan, email)
+	if !created {
+		if safeToRelease {
+			if releaseErr := db.ReleaseTestUsage(context.Background(), user.ID, plan.ID); releaseErr != nil {
+				log.Printf("failed to release test usage reservation for user %d plan %d: %v", user.ID, plan.ID, releaseErr)
+			}
+		}
 		return err
 	}
-	_ = db.IncrementTestUsage(context.Background(), user.ID, plan.ID, 1)
 	return showMainMenu(c, user)
 }
 
-func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, email string) error {
+func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, email string) (created, safeToRelease bool, err error) {
 	if bot.XUIClient == nil {
-		return c.Send("خطا: پنل سرویس‌دهنده در دسترس نیست.")
+		return false, true, c.Send("خطا: پنل سرویس‌دهنده در دسترس نیست.")
 	}
-	if existing, _ := db.GetSubscriptionByEmail(context.Background(), email); existing != nil {
-		return c.Send("نام تولید شده قبلا انتخاب شده است. لطفا مجددا تلاش کنید.")
+	existing, err := db.GetSubscriptionByEmail(context.Background(), email)
+	if err != nil {
+		log.Printf("failed to check test subscription email %s: %v", email, err)
+		return false, true, c.Send("خطا در بررسی نام اشتراک. لطفا مجددا تلاش کنید.")
+	}
+	if existing != nil {
+		return false, true, c.Send("نام تولید شده قبلا انتخاب شده است. لطفا مجددا تلاش کنید.")
 	}
 
 	expireMilli := -int64(plan.ExpireSeconds * 1000)
@@ -200,10 +217,10 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	client := prepareClientConfig(email, serviceGroup(user), user.TelegramID, plan.MaxDataBytes, expireMilli, plan.IPLimit, plan.Flow, subID, clientUUID, plan.Name, user)
 	inboundIDs := validInboundIDs(plan.InboundIDs)
 	if len(inboundIDs) == 0 {
-		return c.Send("این طرح تست هیچ کانکشن معتبری ندارد.")
+		return false, true, c.Send("این طرح تست هیچ کانکشن معتبری ندارد.")
 	}
 
-	err := bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
+	err = bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
 	if err != nil && !xui.IsUnknownOutcome(err) {
 		log.Printf("XUI AddClient failed: %v. Refreshing cache and retrying...", err)
 		if bot.XUIClient.Cache != nil {
@@ -211,7 +228,7 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 			newInboundIDs := validInboundIDs(plan.InboundIDs)
 			if !intSlicesEqual(newInboundIDs, inboundIDs) {
 				if len(newInboundIDs) == 0 {
-					return c.Send("خطا: بعد از بازخوانی کانکشن‌ها، کانکشن معتبری پیدا نشد.")
+					return false, true, c.Send("خطا: بعد از بازخوانی کانکشن‌ها، کانکشن معتبری پیدا نشد.")
 				}
 				inboundIDs = newInboundIDs
 				err = bot.XUIClient.AddClient(xui.AddClientRequest{Client: client, InboundIDs: inboundIDs})
@@ -220,7 +237,11 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	}
 	if err != nil {
 		log.Printf("[ERROR] Failed to add test client %s to XUI: %v", email, err)
-		return c.Send("خطا در ایجاد اشتراک تست در پنل. لطفا دقایقی دیگر مجددا تلاش کنید.")
+		if !xui.IsDefinitiveFailure(err) {
+			recordUnknownTestProvisioning(user, plan, email, clientUUID, subID, client, inboundIDs, err)
+			return false, false, c.Send("وضعیت ساخت اشتراک تست در پنل مشخص نیست. سهمیه شما محفوظ مانده است؛ لطفا برای بررسی با پشتیبانی تماس بگیرید.")
+		}
+		return false, true, c.Send("خطا در ایجاد اشتراک تست در پنل. لطفا دقایقی دیگر مجددا تلاش کنید.")
 	}
 
 	planID := int(plan.ID)
@@ -240,8 +261,16 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 		EndDate:     expireAt,
 	}
 	if err := db.CreateSubscription(context.Background(), sub); err != nil {
-		_ = bot.XUIClient.DeleteClient(email)
-		return c.Send("خطا در ذخیره‌سازی اشتراک تست. عملیات در پنل خنثی شد.")
+		deleteErr := bot.XUIClient.DeleteClient(email)
+		resolution, cleanupErr := resolveDeleteOutcome(deleteErr, func() (*xui.XUIClientInfo, error) {
+			return bot.XUIClient.GetClientByEmail(email)
+		})
+		if resolution == deleteConfirmed {
+			return false, true, c.Send("خطا در ذخیره‌سازی اشتراک تست. سرویس پنل حذف شد.")
+		}
+		log.Printf("failed to persist test subscription %s (db error: %v); panel cleanup unresolved (%s): %v", email, err, resolution, cleanupErr)
+		recordUnknownTestProvisioning(user, plan, email, clientUUID, subID, client, inboundIDs, fmt.Errorf("subscription insert failed: %v; panel cleanup unresolved (%s): %v", err, resolution, cleanupErr))
+		return false, false, c.Send("خطا در ذخیره‌سازی اشتراک تست و بررسی وضعیت پنل. سهمیه شما برای جلوگیری از ایجاد سرویس تکراری محفوظ می‌ماند؛ لطفا با پشتیبانی تماس بگیرید.")
 	}
 
 	links, err := bot.XUIClient.GetSubscriptionLinks(subID)
@@ -273,16 +302,42 @@ func createAndSendTest(c telebot.Context, user *db.User, plan *db.TestPlan, emai
 	if err := sendSubscriptionResult(c, subLink, detailsMsg); err != nil {
 		_ = c.Send(detailsMsg+"\n`"+subLink+"`", telebot.ModeMarkdown)
 	}
-	return nil
+	return true, false, nil
 }
 
-func getTestResetDays() int {
-	resetDaysStr, _ := db.GetSetting(context.Background(), "test_reset_days")
+func recordUnknownTestProvisioning(user *db.User, plan *db.TestPlan, email, clientUUID, subID string, client xui.ClientConfig, inboundIDs []int, cause error) {
+	if user == nil || plan == nil || cause == nil {
+		return
+	}
+	userID := user.ID
+	record := &db.ReconciliationRecord{
+		OperationKey: "test-provisioning:" + email,
+		Kind:         "test_subscription_provisioning_unknown",
+		UserID:       &userID,
+		DesiredState: map[string]any{
+			"user_id": user.ID, "plan_id": plan.ID, "email": email,
+			"client_uuid": clientUUID, "sub_id": subID,
+			"client": client, "inbound_ids": inboundIDs,
+		},
+		ObservedState: map[string]any{},
+		Status:        "pending",
+		ErrorMessage:  cause.Error(),
+	}
+	if err := db.CreateReconciliationRecord(context.Background(), record); err != nil {
+		log.Printf("failed to persist reconciliation marker for uncertain test provisioning %s: %v (original: %v)", email, err, cause)
+	}
+}
+
+func getTestResetDays() (int, error) {
+	resetDaysStr, err := db.GetSetting(context.Background(), "test_reset_days")
+	if err != nil {
+		return 0, err
+	}
 	resetDays, err := strconv.Atoi(strings.TrimSpace(resetDaysStr))
 	if err != nil || resetDays < 0 {
-		return 30 // default to 30 days
+		return 30, nil // default to 30 days
 	}
-	return resetDays
+	return resetDays, nil
 }
 
 func nextUTCReset() string {

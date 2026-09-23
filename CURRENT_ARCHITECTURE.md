@@ -28,10 +28,16 @@ Updated 2026-09-23. This note describes the legacy bot that is currently in this
 
 ## XUI readiness gate
 
-- Startup checks the supported panel capability/version. The current gate accepts the normalized 3.8.5 version family, matching the pinned panel API contract. A failed check keeps Telegram available while disabling XUI mutations.
+- Startup checks the supported panel capability/version. The current gate accepts only the 3.8.5 release (with an optional `v` prefix or prerelease/build suffix), matching the pinned panel API contract and rejecting nearby versions such as 3.8.50. A failed check keeps Telegram available while disabling XUI mutations.
 - Add, update/patch, delete, attach, and other correctness-critical writes fail closed when readiness is false and return a definitive no-write result for readiness failures.
 - A periodic readiness check can restore mutation capability after the panel recovers; restart is not required.
-- Write timeouts remain unknown outcomes and are verified through remote reads. They are never treated as successful writes by themselves.
+- Panel application and HTTP errors can follow partial writes and are treated as unknown outcomes. Add reads back the client and repairs only verified missing inbound attachments; update transport failures verify desired state. Ambiguous writes are never repeated blindly.
+
+## Free test issuance
+
+- Test claims reserve the user/plan quota atomically in PostgreSQL before contacting XUI. `test_reset_days` controls the cooldown; zero allows only one lifetime claim per user and plan.
+- A reservation is released only after a confirmed no-write or confirmed cleanup. Unknown XUI state or unresolved cleanup retains the reservation and is surfaced to the user, preventing a retry from creating a duplicate test service.
+- Quota lookup and reservation errors fail closed. Test service cleanup after a subscription insert failure is verified through panel readback; unresolved creation or cleanup is recorded for manual reconciliation.
 
 ## Reconciliation contracts and terminal actions
 
@@ -72,4 +78,4 @@ Admin Sync All treats the PostgreSQL IP limit as authoritative and transforms it
 
 ## Verification record
 
-The former baseline inventory listed passing commands without tying them to a current commit; that inventory was removed. This document makes no pass claim. Use the current commit’s GitHub Actions run and the completion report for verification results. `go test` runs without `TEST_DATABASE_URL` skip DB-backed cases.
+Regression coverage includes malformed/partial XUI write responses, exact supported-version matching, readiness context cancellation, concurrent one-time trial reservations, username ownership ambiguity, and bounded plan conversions. Database-backed cases require an isolated `TEST_DATABASE_URL`; without it, they skip.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -653,16 +654,18 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		}
 	case "duration":
 		hours, err := strconv.ParseFloat(text, 64)
-		if err != nil || hours <= 0 {
+		seconds, valid := checkedHoursToSeconds(hours)
+		if err != nil || !valid {
 			return c.Send("مدت زمان باید یک عدد مثبت بر حسب ساعت باشد (مثلاً '2' یا '0.5'):")
 		}
-		draft["expire_seconds"] = int64(hours * 3600)
+		draft["expire_seconds"] = seconds
 	case "max_data":
 		gb, err := strconv.ParseFloat(text, 64)
-		if err != nil || gb < 0 {
+		bytes, valid := checkedGigabytesToBytes(gb)
+		if err != nil || !valid {
 			return c.Send("حجم مجاز باید صفر یا یک عدد مثبت بر حسب گیگابایت باشد:")
 		}
-		draft["max_data_bytes"] = int64(gb * 1073741824)
+		draft["max_data_bytes"] = bytes
 	case "max_per_day":
 		val, err := strconv.Atoi(text)
 		if err != nil || val < 0 {
@@ -678,6 +681,22 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		return showAdminDraftTestPlanMenu(c, draft)
 	}
 	return showAdminDraftPaidPlanMenu(c, draft)
+}
+
+func checkedHoursToSeconds(hours float64) (int64, bool) {
+	seconds := hours * 3600
+	if math.IsNaN(hours) || math.IsInf(hours, 0) || hours <= 0 || seconds < 1 || seconds >= float64(int64(^uint64(0)>>1)) {
+		return 0, false
+	}
+	return int64(seconds), true
+}
+
+func checkedGigabytesToBytes(gigabytes float64) (int64, bool) {
+	bytes := gigabytes * 1073741824
+	if math.IsNaN(gigabytes) || math.IsInf(gigabytes, 0) || gigabytes < 0 || (gigabytes > 0 && bytes < 1) || bytes >= float64(int64(^uint64(0)>>1)) {
+		return 0, false
+	}
+	return int64(bytes), true
 }
 
 func HandleAdminDraftToggleSync(c telebot.Context) error {
