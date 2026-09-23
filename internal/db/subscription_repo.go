@@ -122,14 +122,14 @@ func CreateSubscription(ctx context.Context, s *Subscription) error {
 	if !IsValidSubscriptionStatus(s.Status) {
 		return fmt.Errorf("invalid subscription status: %q", s.Status)
 	}
+	if err := validateSubscriptionLifecycle(s.Status, s.IsActive); err != nil {
+		return err
+	}
 	if s.DisplayName == "" {
 		s.DisplayName = s.ClientEmail
 	}
 	if s.Status == "" {
 		s.Status = SubscriptionStatusActive
-	}
-	if s.IPLimit == 0 {
-		s.IPLimit = 1
 	}
 	if s.StartDate.IsZero() {
 		s.StartDate = time.Now().UTC()
@@ -164,8 +164,15 @@ func UpdateSubscriptionStatus(ctx context.Context, id int, status string) error 
 		return fmt.Errorf("invalid subscription status: %q", status)
 	}
 
-	isActive := status == SubscriptionStatusActive
-	_, err := Pool.Exec(ctx, `UPDATE subscriptions SET status = $1, is_active = $2, updated_at = NOW() WHERE id = $3`, status, isActive, id)
+	_, err := Pool.Exec(ctx, `
+		UPDATE subscriptions SET status = $1,
+			is_active = CASE
+				WHEN $1 IN ('active', 'cancellation_requested', 'deprovisioning') THEN TRUE
+				WHEN $1 IN ('disabled', 'expired', 'cancelled', 'deleted') THEN FALSE
+				ELSE is_active END,
+			updated_at = NOW()
+		WHERE id = $2
+	`, status, id)
 	return err
 }
 
@@ -179,6 +186,9 @@ func UpdateSubscription(ctx context.Context, s *Subscription) error {
 
 	if !IsValidSubscriptionStatus(s.Status) {
 		return fmt.Errorf("invalid subscription status: %q", s.Status)
+	}
+	if err := validateSubscriptionLifecycle(s.Status, s.IsActive); err != nil {
+		return err
 	}
 
 	if s.EndDate.IsZero() && s.ExpireTime != nil && *s.ExpireTime > 0 {

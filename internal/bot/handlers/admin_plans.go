@@ -59,7 +59,7 @@ func HandleAdminPlans(c telebot.Context) error {
 		if !p.Enabled {
 			enabledMark = "🔴"
 		}
-		text.WriteString(fmt.Sprintf("%s #%d %s (قیمت پایه %s، %d-%d کاربر همزمان)\n",
+		text.WriteString(fmt.Sprintf("%s #%d %s (قیمت پایه %s، %d-%d IP همزمان)\n",
 			enabledMark, p.ID, p.Name, persian.FormatMoney(p.BasePriceToman), p.BaseIPLimit, p.MaxIPLimit))
 	}
 
@@ -253,7 +253,7 @@ func showAdminDraftTestPlanMenu(c telebot.Context, draft map[string]interface{})
 
 	ipLabel := "نامحدود"
 	if ipLimit > 0 {
-		ipLabel = fmt.Sprintf("%d کاربر همزمان", ipLimit)
+		ipLabel = fmt.Sprintf("%d IP همزمان", ipLimit)
 	}
 
 	text := fmt.Sprintf("🧪 **تنظیمات پیش‌نویس طرح تست**\n\n"+
@@ -478,11 +478,11 @@ func HandleAdminDraftEdit(c telebot.Context) error {
 	case "price_per_extra_month":
 		prompt = "⏱️ قیمت هر ماه دوره اضافی را به تومان ارسال کنید (مثال: 20000):"
 	case "ip_limits":
-		prompt = "🌐 محدودیت کاربر همزمان را به صورت 'پایه-حداکثر' وارد کنید (مثال: '1-6' یا '2-2')، یا عدد '0' برای نامحدود:"
+		prompt = "🌐 محدودیت IP همزمان را به صورت 'پایه-حداکثر' وارد کنید (مثال: '1-6' یا '2-2')، یا عدد '0' برای نامحدود:"
 	case "ip_limit":
-		prompt = "🌐 محدودیت کاربر همزمان را وارد کنید (مثال: '1' یا '2')، یا '0' برای نامحدود:"
+		prompt = "🌐 محدودیت IP همزمان را وارد کنید (مثال: '1' یا '2')، یا '0' برای نامحدود:"
 	case "extra_ip":
-		prompt = "💲 قیمت هر کاربر همزمان اضافی را به تومان ارسال کنید (مثال: 50000):"
+		prompt = "💲 قیمت هر IP همزمان اضافی را به تومان ارسال کنید (مثال: 50000):"
 	case "discounts":
 		prompt = "🏷️ تخفیف‌ها را به فرمت 'ماه:درصد,ماه:درصد' وارد کنید (مثال: '3:10,6:20') یا '-' برای بدون تخفیف:"
 	case "access":
@@ -620,7 +620,7 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 	case "extra_ip":
 		val, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || val < 0 {
-			return c.Send("قیمت هر کاربر همزمان اضافی باید صفر یا یک عدد مثبت (تومان) باشد:")
+			return c.Send("قیمت هر IP همزمان اضافی باید صفر یا یک عدد مثبت (تومان) باشد:")
 		}
 		draft["price_per_extra_ip_toman"] = val
 	case "flow":
@@ -1306,7 +1306,7 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 
 		ipLabel := "نامحدود"
 		if plan.IPLimit > 0 {
-			ipLabel = fmt.Sprintf("%d کاربر همزمان", plan.IPLimit)
+			ipLabel = fmt.Sprintf("%d IP همزمان", plan.IPLimit)
 		}
 
 		text = fmt.Sprintf("🧪 **طرح تست #%d**\n\n"+
@@ -1332,7 +1332,7 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 			priceBlock = fmt.Sprintf("نوع: نامحدود\nقیمت پایه: %s", persian.FormatMoney(plan.BasePriceToman))
 		}
 
-		ipLabel := fmt.Sprintf("%d-%d کاربر همزمان", plan.BaseIPLimit, plan.MaxIPLimit)
+		ipLabel := fmt.Sprintf("%d-%d IP همزمان", plan.BaseIPLimit, plan.MaxIPLimit)
 		if plan.BaseIPLimit == 0 && plan.MaxIPLimit == 0 {
 			ipLabel = "نامحدود"
 		}
@@ -1340,7 +1340,7 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 		text = fmt.Sprintf("💼 **طرح خرید #%d**\n\n"+
 			"📝 نام: %s\n📝 توضیحات: %s\n📝 راهنما: %s\n⚡ وضعیت فعال: %t\n👥 عمومی: %t\n"+
 			"📡 اینباندها: %s\n%s\n🌐 محدودیت آی‌پی همزمان: %s\n"+
-			"💲 قیمت هر کاربر اضافه: %s\n⚡ فلو: %s\n🏷️ تخفیف‌ها: %s\n👥 کاربران اختصاصی: %v",
+			"💲 قیمت هر IP همزمان اضافه: %s\n⚡ فلو: %s\n🏷️ تخفیف‌ها: %s\n👥 کاربران اختصاصی: %v",
 			plan.ID, plan.Name, plan.Description, plan.UsageDescription, plan.Enabled, plan.IsGlobal,
 			inboundLabel(plan.InboundIDs), priceBlock, ipLabel,
 			persian.FormatMoney(plan.PricePerExtraIPToman), plan.Flow, formatDiscountLabel(plan.DiscountTiers), access)

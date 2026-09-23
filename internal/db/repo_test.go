@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"testing"
@@ -198,6 +199,7 @@ func TestSubscriptionRepo(t *testing.T) {
 	// 7. UpdateSubscription
 	sub.IPLimit = 5
 	sub.IsActive = false
+	sub.Status = SubscriptionStatusDisabled
 	// Sleep a bit to ensure updated_at changes
 	time.Sleep(10 * time.Millisecond)
 
@@ -589,10 +591,14 @@ func TestPurchaseRequestIntentKeyIsPersistedAndUsedForApproval(t *testing.T) {
 	ctx := setupTestDB(t)
 	const telegramID int64 = 999999995
 	const operationKey = "direct_purchase_intent:test-receipt-1"
+	var planID, quoteID int64
 	defer func() {
 		if Pool != nil {
+			_, _ = Pool.Exec(ctx, "DELETE FROM reconciliation_records WHERE user_id = (SELECT id FROM bot_users WHERE telegram_id = $1)", telegramID)
 			_, _ = Pool.Exec(ctx, "DELETE FROM transactions WHERE operation_key = $1", operationKey)
 			_, _ = Pool.Exec(ctx, "DELETE FROM purchase_requests WHERE operation_key = $1", operationKey)
+			_, _ = Pool.Exec(ctx, "DELETE FROM purchase_quotes WHERE id = $1", quoteID)
+			_, _ = Pool.Exec(ctx, "DELETE FROM paid_plans WHERE id = $1", planID)
 			_, _ = Pool.Exec(ctx, "DELETE FROM bot_users WHERE telegram_id = $1", telegramID)
 		}
 	}()
@@ -605,11 +611,19 @@ func TestPurchaseRequestIntentKeyIsPersistedAndUsedForApproval(t *testing.T) {
 	`, telegramID).Scan(&userID); err != nil {
 		t.Fatalf("failed to create purchase intent test user: %v", err)
 	}
+	if err := Pool.QueryRow(ctx, `INSERT INTO paid_plans (name, enabled, base_ip_limit, max_ip_limit, inbound_ids, flow) VALUES ($1, TRUE, 1, 2, '[1]'::jsonb, 'test-flow') RETURNING id`, fmt.Sprintf("purchase_intent_plan_%d", telegramID)).Scan(&planID); err != nil {
+		t.Fatalf("create approval plan: %v", err)
+	}
+	if err := Pool.QueryRow(ctx, `INSERT INTO purchase_quotes (quote_key, user_id, plan_id, plan_name, months, duration_days, ip_limit, data_gb, base_price_toman, final_price_toman) VALUES ($1, $2, $3, 'purchase_intent_plan', 1, 30, 1, 10, 321, 321) RETURNING id`, operationKey+":quote", userID, planID).Scan(&quoteID); err != nil {
+		t.Fatalf("create approval quote: %v", err)
+	}
 
 	priceToman := int64(321)
 	req := &PurchaseRequest{
 		UserID:         userID,
 		Type:           "buy",
+		PlanID:         &planID,
+		QuoteID:        &quoteID,
 		PriceToman:     &priceToman,
 		Price:          321,
 		Months:         1,
@@ -619,6 +633,10 @@ func TestPurchaseRequestIntentKeyIsPersistedAndUsedForApproval(t *testing.T) {
 		TelegramFileID: "purchase-intent-test",
 		Status:         "pending",
 		OperationKey:   operationKey,
+		ProvisioningSnapshot: map[string]any{
+			"client_uuid": "purchase-intent-uuid", "sub_id": "purchase-intent-sub", "inbound_ids": []int{1},
+			"expiry_time_milli": int64(-30 * 24 * 60 * 60 * 1000), "total_bytes": int64(10) * 1024 * 1024 * 1024, "flow": "test-flow",
+		},
 	}
 	if err := CreatePurchaseRequest(ctx, req); err != nil {
 		t.Fatalf("failed to create purchase request: %v", err)
@@ -635,7 +653,12 @@ func TestPurchaseRequestIntentKeyIsPersistedAndUsedForApproval(t *testing.T) {
 	}
 
 	userPtr, purchaseID := userID, req.ID
-	workItem := &ReconciliationRecord{OperationKey: "direct_payment:" + strconv.FormatInt(req.ID, 10) + ":provisioning", Kind: "direct_payment_provisioning_retry", UserID: &userPtr, PurchaseRequestID: &purchaseID, DesiredState: map[string]any{"purchase_request_id": req.ID, "user_id": userID}}
+	workItem := &ReconciliationRecord{OperationKey: "direct_payment:" + strconv.FormatInt(req.ID, 10) + ":provisioning", Kind: "direct_payment_provisioning_retry", UserID: &userPtr, PurchaseRequestID: &purchaseID, DesiredState: map[string]any{
+		"purchase_request_id": req.ID, "user_id": userID, "action_type": "buy", "quote_id": quoteID, "plan_id": planID,
+		"amount_toman": priceToman, "months": 1, "ip_limit": 1, "data_gb": 10, "client_email": req.ClientEmail,
+		"expected_uuid": "purchase-intent-uuid", "expected_sub_id": "purchase-intent-sub", "inbound_ids": []int{1},
+		"expiry_time_milli": int64(-30 * 24 * 60 * 60 * 1000), "total_bytes": int64(10) * 1024 * 1024 * 1024, "flow": "test-flow",
+	}}
 	approved, err := ApprovePurchaseRequest(ctx, req.ID, 999999995, workItem)
 	if err != nil || approved == nil {
 		t.Fatalf("failed to approve purchase request: approved=%#v err=%v", approved, err)

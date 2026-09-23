@@ -244,6 +244,9 @@ func (p *Processor) handlePendingRefund(ctx context.Context, rec *db.Reconciliat
 	}
 
 	if err := p.executeRefund(ctx, payload.UserID, payload.Amount, payload.Description, payload.OperationKey); err != nil {
+		if errors.Is(err, db.ErrWalletOperationConflict) {
+			return ProcessOutcome{Kind: OutcomeManualReview, Reason: err.Error()}
+		}
 		return ProcessOutcome{
 			Kind: OutcomeRetry,
 			Err:  err,
@@ -605,6 +608,9 @@ func (p *Processor) handleDeleteReconciliation(ctx context.Context, rec *db.Reco
 		if payload.RefundAmount > 0 && payload.UserID != nil {
 			refundErr := p.executeRefund(ctx, *payload.UserID, payload.RefundAmount, "refund for cancelled subscription", payload.RefundOperationKey)
 			if refundErr != nil {
+				if errors.Is(refundErr, db.ErrWalletOperationConflict) {
+					return ProcessOutcome{Kind: OutcomeManualReview, Reason: refundErr.Error()}
+				}
 				return ProcessOutcome{
 					Kind: OutcomeRetry,
 					Err:  refundErr, // Keep retryable! Never resolve with failed refund!
@@ -633,6 +639,9 @@ func (p *Processor) handleDeleteReconciliation(ctx context.Context, rec *db.Reco
 			if payload.RefundAmount > 0 && payload.UserID != nil {
 				refundErr := p.executeRefund(ctx, *payload.UserID, payload.RefundAmount, "refund for cancelled subscription", payload.RefundOperationKey)
 				if refundErr != nil {
+					if errors.Is(refundErr, db.ErrWalletOperationConflict) {
+						return ProcessOutcome{Kind: OutcomeManualReview, Reason: refundErr.Error()}
+					}
 					return ProcessOutcome{
 						Kind: OutcomeRetry,
 						Err:  refundErr, // Keep retryable!
@@ -1206,6 +1215,15 @@ func (p *Processor) handleDirectSubscriptionUpdate(ctx context.Context, payload 
 			return ProcessOutcome{Kind: OutcomeManualReview, Reason: "direct IP upgrade has no valid durable target limit"}
 		}
 		desiredIP = *payload.DesiredIPLimit
+		if sub.PlanID == nil || desiredIP <= sub.IPLimit {
+			return ProcessOutcome{Kind: OutcomeManualReview, Reason: "direct IP upgrade violates the current-to-requested limit transition"}
+		}
+		plan, planErr := db.GetPaidPlanByID(ctx, int64(*sub.PlanID))
+		if planErr != nil || plan == nil || plan.MaxIPLimit <= 0 || desiredIP > plan.MaxIPLimit {
+			return ProcessOutcome{Kind: OutcomeManualReview, Reason: "direct IP upgrade exceeds the current paid plan limit"}
+		}
+	} else if payload.ActionType == "extend" && (payload.Months < 1 || payload.Months > 120) {
+		return ProcessOutcome{Kind: OutcomeManualReview, Reason: "direct extension duration is outside the supported range"}
 	}
 	desiredExpiry := payload.ExpiryTimeMilli
 	if payload.ActionType == "upgrade_ip" && desiredExpiry == 0 && sub.ExpireTime != nil {
@@ -1238,6 +1256,16 @@ func (p *Processor) handleDirectSubscriptionUpdate(ctx context.Context, payload 
 	sub.ExpireTime = &desiredExpiry
 	sub.IPLimit = desiredIP
 	sub.IsActive = true
+	sub.Status = db.SubscriptionStatusActive
+	sub.DesiredIPLimit = nil
+	sub.DesiredExpireTime = nil
+	sub.DesiredIsActive = nil
+	sub.ReconciliationNote = ""
+	if desiredExpiry > 0 {
+		sub.EndDate = time.UnixMilli(desiredExpiry)
+	} else {
+		sub.EndDate = time.Time{}
+	}
 	if err := db.UpdateSubscription(ctx, sub); err != nil {
 		return ProcessOutcome{Kind: OutcomeRetry, Err: fmt.Errorf("panel update is verified but local subscription update failed: %w", err)}
 	}

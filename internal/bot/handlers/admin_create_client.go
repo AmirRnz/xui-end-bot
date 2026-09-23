@@ -457,19 +457,19 @@ func promptAdminCreateIPLimit(c telebot.Context, draft map[string]interface{}) e
 	menu := &telebot.ReplyMarkup{}
 	menu.Inline(
 		menu.Row(
-			menu.Data("1 دستگاه", "admin_create_iplimit", "1"),
-			menu.Data("2 دستگاه", "admin_create_iplimit", "2"),
+			menu.Data("1 IP", "admin_create_iplimit", "1"),
+			menu.Data("2 IP", "admin_create_iplimit", "2"),
 		),
 		menu.Row(
-			menu.Data("3 دستگاه", "admin_create_iplimit", "3"),
-			menu.Data("5 دستگاه", "admin_create_iplimit", "5"),
+			menu.Data("3 IP", "admin_create_iplimit", "3"),
+			menu.Data("5 IP", "admin_create_iplimit", "5"),
 		),
 		menu.Row(
-			menu.Data("✏️ تعداد کاربر/دستگاه دلخواه", "admin_create_custom_prompt", "iplimit"),
+			menu.Data("✏️ سقف IP همزمان دلخواه", "admin_create_custom_prompt", "iplimit"),
 		),
 		menu.Row(menu.Data("« انصراف", "admin_create_client")),
 	)
-	return maybeEditOrSend(c, "🌐 **تعداد دستگاه‌های همزمان (IP Limit)** را انتخاب کنید:", menu)
+	return maybeEditOrSend(c, "🌐 **تعداد اتصال‌های IP همزمان (IP Limit)** را انتخاب کنید:", menu)
 }
 
 func HandleAdminCreateIPLimit(c telebot.Context) error {
@@ -485,7 +485,7 @@ func HandleAdminCreateIPLimit(c telebot.Context) error {
 
 	ipLimit, err := strconv.Atoi(callbackPayload(c))
 	if err != nil || ipLimit < 0 {
-		return c.Send("سقف دستگاه نامعتبر است.")
+		return c.Send("سقف IP نامعتبر است.")
 	}
 
 	draft := state.Data
@@ -571,7 +571,7 @@ func HandleAdminCreateCustomPrompt(c telebot.Context) error {
 		return maybeEditOrSend(c, "💾 لطفا مقدار ترافیک حجمی را به گیگابایت ارسال کنید (مثلاً: 50):\n\nجهت انصراف /cancel را بزنید.")
 	case "iplimit":
 		bot.FSM.SetState(user.TelegramID, "awaiting_admin_create_custom_iplimit", draft)
-		return maybeEditOrSend(c, "🌐 لطفا سقف تعداد دستگاه‌های همزمان (IP Limit) را ارسال کنید (مثلاً: 4):\n\nجهت انصراف /cancel را بزنید.")
+		return maybeEditOrSend(c, "🌐 لطفا سقف تعداد اتصال‌های IP همزمان (IP Limit) را ارسال کنید (مثلاً: 4):\n\nجهت انصراف /cancel را بزنید.")
 	case "months":
 		bot.FSM.SetState(user.TelegramID, "awaiting_admin_create_custom_months", draft)
 		return maybeEditOrSend(c, "⏱️ لطفا مدت زمان سرویس را به ماه ارسال کنید (مثلاً: 2):\n\nجهت انصراف /cancel را بزنید.")
@@ -608,7 +608,7 @@ func ProcessAdminCreateCustomIPLimitText(c telebot.Context, text string) error {
 
 	ipLimit, err := strconv.Atoi(strings.TrimSpace(text))
 	if err != nil || ipLimit < 0 {
-		return c.Send("سقف دستگاه باید یک عدد صفر یا مثبت باشد. مجددا ارسال کنید:")
+		return c.Send("سقف IP باید یک عدد صفر یا مثبت باشد. مجددا ارسال کنید:")
 	}
 
 	draft := state.Data
@@ -657,7 +657,7 @@ func promptAdminCreateCustomerDetails(c telebot.Context, draft map[string]interf
 	summary.WriteString(fmt.Sprintf("▫️ نوع طرح: %s (%s)\n", planName, mode))
 	summary.WriteString(fmt.Sprintf("▫️ مدت زمان: %d ماه\n", months))
 	summary.WriteString(fmt.Sprintf("▫️ میزان ترافیک: %s\n", trafficText))
-	summary.WriteString(fmt.Sprintf("▫️ سقف دستگاه (IP Limit): %d\n\n", ipLimit))
+	summary.WriteString(fmt.Sprintf("▫️ سقف IP (IP Limit): %d\n\n", ipLimit))
 	summary.WriteString("👤 **ارسال اطلاعات مشتری(ها)**:\n")
 	summary.WriteString("لطفا مشخصات مشتری را با فرمت زیر ارسال کنید:\n")
 	summary.WriteString("`name:telegram_id`\n\n")

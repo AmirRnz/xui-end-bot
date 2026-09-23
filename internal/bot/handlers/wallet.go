@@ -204,7 +204,7 @@ func HandleReceiptPhoto(c telebot.Context) error {
 			var details string
 			switch pType {
 			case "buy":
-				details = fmt.Sprintf("خرید سرویس جدید\nطرح: %s\nایمیل: %s\nمدت: %d ماه\nکاربر همزمان: %s\nحجم: %d گیگابایت", customName, email, months, formatIPLimit(ipLimit), dataGB)
+				details = fmt.Sprintf("خرید سرویس جدید\nطرح: %s\nایمیل: %s\nمدت: %d ماه\nIP همزمان: %s\nحجم: %d گیگابایت", customName, email, months, formatIPLimit(ipLimit), dataGB)
 			case "extend":
 				subDisplay := int64(0)
 				if subIDPtr != nil {
@@ -216,7 +216,7 @@ func HandleReceiptPhoto(c telebot.Context) error {
 				if subIDPtr != nil {
 					subDisplay = *subIDPtr
 				}
-				details = fmt.Sprintf("ارتقای تعداد کاربر همزمان\nشناسه اشتراک: %d\nتعداد کاربر جدید: %s", subDisplay, formatIPLimit(ipLimit))
+				details = fmt.Sprintf("ارتقای تعداد IP همزمان\nشناسه اشتراک: %d\nتعداد سقف IP جدید: %s", subDisplay, formatIPLimit(ipLimit))
 			}
 
 			caption := fmt.Sprintf("📥 درخواست خرید مستقیم #%d\nکاربر: @%s (%d)\nنوع: %s\nمبلغ: %s\n\nجزئیات:\n%s",
@@ -495,7 +495,7 @@ func HandleAdminRejectPurchase(c telebot.Context) error {
 		case "extend":
 			actionLabel = "تمدید سرویس"
 		case "upgrade_ip":
-			actionLabel = "ارتقای تعداد کاربر همزمان"
+			actionLabel = "ارتقای تعداد IP همزمان"
 		case "claim":
 			actionLabel = "ثبت اشتراک قدیمی"
 		}
@@ -576,7 +576,7 @@ func upgradeSubscriptionIPFromApprovedRequest(user *db.User, sub *db.Subscriptio
 		return fmt.Errorf("خطا در ذخیره‌سازی دیتابیس: %w", err)
 	}
 
-	msg := fmt.Sprintf("✅ پرداخت شما تایید و سقف کاربر همزمان اشتراک **%s** به %s دستگاه ارتقا یافت.\nهزینه ارتقا پرداخت شده: %s.",
+	msg := fmt.Sprintf("✅ پرداخت شما تایید و سقف IP همزمان اشتراک **%s** به %s IP ارتقا یافت.\nهزینه ارتقا پرداخت شده: %s.",
 		sub.DisplayName, formatIPLimit(req.IPLimit), persian.FormatMoney(purchaseAmountToman(req)))
 	_, _ = bot.Bot.Send(&telebot.User{ID: user.TelegramID}, FormatMarkdown(msg), telebot.ModeMarkdown)
 	return nil
@@ -730,7 +730,7 @@ func HandleAdminPendingClaims(c telebot.Context) error {
 		))
 		menu.Inline(rows...)
 
-		caption := fmt.Sprintf("📥 **درخواست ثبت اشتراک دستی #%d**\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nکاربر همزمان: %s\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
+		caption := fmt.Sprintf("📥 **درخواست ثبت اشتراک دستی #%d**\n\nکاربر: @%s (%d)\nایمیل اشتراک: `%s`\nشناسه اشتراک: `%s`\nIP همزمان: %s\nحجم: %d گیگابایت\n\nلطفا یکی از طرح‌های زیر را برای این اشتراک انتخاب کنید تا تایید شود:",
 			req.ID, username, req.UserID, req.ClientEmail, req.CustomName, formatIPLimit(req.IPLimit), req.DataGB)
 
 		_, _ = bot.Bot.Send(c.Sender(), FormatMarkdown(caption), menu, telebot.ModeMarkdown)
