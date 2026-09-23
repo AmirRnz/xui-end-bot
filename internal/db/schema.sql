@@ -227,8 +227,6 @@ INSERT INTO bot_settings (key, value) VALUES
     ('card_owner', ''),
     ('topup_description', ''),
     ('min_topup_amount', '0'),
-    ('currency_name', 'IRR'),
-    ('currency_symbol', ''),
     ('expiry_notify_days', '3,1'),
     ('group_name', ''),
     ('ip_limit_factor', ''),

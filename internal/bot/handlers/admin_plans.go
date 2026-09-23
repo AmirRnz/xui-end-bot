@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -61,7 +60,7 @@ func HandleAdminPlans(c telebot.Context) error {
 			enabledMark = "🔴"
 		}
 		text.WriteString(fmt.Sprintf("%s #%d %s (قیمت پایه %s تومان، %d-%d کاربر همزمان)\n",
-			enabledMark, p.ID, p.Name, persian.FormatMoney(int64(p.BasePrice)), p.BaseIPLimit, p.MaxIPLimit))
+			enabledMark, p.ID, p.Name, persian.FormatMoney(p.BasePriceToman), p.BaseIPLimit, p.MaxIPLimit))
 	}
 
 	if bot.XUIClient != nil {
@@ -134,25 +133,25 @@ func HandleCreatePaidPlan(c telebot.Context) error {
 	}
 
 	draft := map[string]interface{}{
-		"id":                    int64(0),
-		"type":                  "paid",
-		"name":                  "",
-		"description":           "",
-		"usage_description":     "",
-		"inbound_ids":           []int{},
-		"base_price":            0.0,
-		"base_ip_limit":         1,
-		"max_ip_limit":          1,
-		"price_per_extra_ip":    0.0,
-		"flow":                  "",
-		"discount_tiers":        []db.DiscountTier{},
-		"is_global":             true,
-		"allowed_user_ids":      []int64{},
-		"sync_subs":             true,
-		"is_limited":            false,
-		"price_per_gb":          0.0,
-		"min_data_gb":           int64(0),
-		"price_per_extra_month": 0.0,
+		"id":                          int64(0),
+		"type":                        "paid",
+		"name":                        "",
+		"description":                 "",
+		"usage_description":           "",
+		"inbound_ids":                 []int{},
+		"base_price_toman":            int64(0),
+		"base_ip_limit":               1,
+		"max_ip_limit":                1,
+		"price_per_extra_ip_toman":    int64(0),
+		"flow":                        "",
+		"discount_tiers":              []db.DiscountTier{},
+		"is_global":                   true,
+		"allowed_user_ids":            []int64{},
+		"sync_subs":                   true,
+		"is_limited":                  false,
+		"price_per_gb_toman":          int64(0),
+		"min_data_gb":                 int64(0),
+		"price_per_extra_month_toman": int64(0),
 	}
 
 	bot.FSM.SetState(user.TelegramID, "awaiting_admin_paid_plan_menu", draft)
@@ -205,25 +204,25 @@ func HandleAdminPlanEdit(c telebot.Context) error {
 		}
 
 		draft := map[string]interface{}{
-			"id":                    plan.ID,
-			"type":                  "paid",
-			"name":                  plan.Name,
-			"description":           plan.Description,
-			"usage_description":     plan.UsageDescription,
-			"inbound_ids":           plan.InboundIDs,
-			"base_price":            plan.BasePrice,
-			"base_ip_limit":         plan.BaseIPLimit,
-			"max_ip_limit":          plan.MaxIPLimit,
-			"price_per_extra_ip":    plan.PricePerExtraIP,
-			"flow":                  plan.Flow,
-			"discount_tiers":        plan.DiscountTiers,
-			"is_global":             plan.IsGlobal,
-			"allowed_user_ids":      allowedUserIDs,
-			"sync_subs":             plan.SyncSubs,
-			"is_limited":            plan.IsLimited,
-			"price_per_gb":          plan.PricePerGB,
-			"min_data_gb":           plan.MinDataGB,
-			"price_per_extra_month": plan.PricePerExtraMonth,
+			"id":                          plan.ID,
+			"type":                        "paid",
+			"name":                        plan.Name,
+			"description":                 plan.Description,
+			"usage_description":           plan.UsageDescription,
+			"inbound_ids":                 plan.InboundIDs,
+			"base_price_toman":            plan.BasePriceToman,
+			"base_ip_limit":               plan.BaseIPLimit,
+			"max_ip_limit":                plan.MaxIPLimit,
+			"price_per_extra_ip_toman":    plan.PricePerExtraIPToman,
+			"flow":                        plan.Flow,
+			"discount_tiers":              plan.DiscountTiers,
+			"is_global":                   plan.IsGlobal,
+			"allowed_user_ids":            allowedUserIDs,
+			"sync_subs":                   plan.SyncSubs,
+			"is_limited":                  plan.IsLimited,
+			"price_per_gb_toman":          plan.PricePerGBToman,
+			"min_data_gb":                 plan.MinDataGB,
+			"price_per_extra_month_toman": plan.PricePerExtraMonthToman,
 		}
 
 		bot.FSM.SetState(user.TelegramID, "awaiting_admin_paid_plan_menu", draft)
@@ -298,19 +297,19 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 	description := draftGetString(draft, "description")
 	usageDescription := draftGetString(draft, "usage_description")
 	inboundIDs := draftGetIntSlice(draft, "inbound_ids")
-	basePrice := draftGetFloat64(draft, "base_price")
+	basePriceToman := draftGetInt64(draft, "base_price_toman")
 	baseIP := draftGetInt(draft, "base_ip_limit")
 	maxIP := draftGetInt(draft, "max_ip_limit")
-	extraIPPrice := draftGetFloat64(draft, "price_per_extra_ip")
+	extraIPPriceToman := draftGetInt64(draft, "price_per_extra_ip_toman")
 	flow := draftGetString(draft, "flow")
 	discounts := draftGetDiscounts(draft, "discount_tiers")
 	isGlobal := draftGetBool(draft, "is_global")
 	syncSubs := draftGetBool(draft, "sync_subs")
 	allowedUserIDs := draftGetInt64Slice(draft, "allowed_user_ids")
 	isLimited := draftGetBool(draft, "is_limited")
-	pricePerGB := draftGetFloat64(draft, "price_per_gb")
+	pricePerGBToman := draftGetInt64(draft, "price_per_gb_toman")
 	minDataGB := draftGetInt64(draft, "min_data_gb")
-	pricePerExtraMonth := draftGetFloat64(draft, "price_per_extra_month")
+	pricePerExtraMonthToman := draftGetInt64(draft, "price_per_extra_month_toman")
 
 	inboundLabel := formatInboundLabel(inboundIDs)
 	discountLabel := formatDiscountLabel(discounts)
@@ -321,9 +320,9 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 			"💵 قیمت هر گیگابایت: %s تومان\n"+
 				"💾 حداقل حجم: %d گیگابایت\n"+
 				"⏱️ قیمت هر ماه اضافه: %s تومان\n",
-			persian.FormatMoney(int64(pricePerGB)), minDataGB, persian.FormatMoney(int64(pricePerExtraMonth)))
+			persian.FormatMoney(pricePerGBToman), minDataGB, persian.FormatMoney(pricePerExtraMonthToman))
 	} else {
-		priceBlock = fmt.Sprintf("💵 قیمت پایه: %s تومان\n", persian.FormatMoney(int64(basePrice)))
+		priceBlock = fmt.Sprintf("💵 قیمت پایه: %s تومان\n", persian.FormatMoney(basePriceToman))
 	}
 
 	var ipLabel string
@@ -358,7 +357,7 @@ func showAdminDraftPaidPlanMenu(c telebot.Context, draft map[string]interface{})
 		planTypeFa,
 		priceBlock,
 		ipLabel,
-		persian.FormatMoney(int64(extraIPPrice)),
+		persian.FormatMoney(extraIPPriceToman),
 		nonEmpty(flow, "(پیش‌فرض/خالی)"),
 		discountLabel,
 		formatAccessLabel(isGlobal, allowedUserIDs),
@@ -544,14 +543,12 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		if err != nil || val < 0 {
 			return c.Send("قیمت باید صفر یا یک عدد مثبت (تومان) باشد. لطفاً دوباره وارد کنید:")
 		}
-		draft["base_price"] = float64(val)
 		draft["base_price_toman"] = val
 	case "price_per_gb":
 		val, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || val < 0 {
 			return c.Send("قیمت هر گیگابایت باید صفر یا مثبت (تومان) باشد. لطفاً دوباره وارد کنید:")
 		}
-		draft["price_per_gb"] = float64(val)
 		draft["price_per_gb_toman"] = val
 	case "min_data_gb":
 		val, err := strconv.ParseInt(text, 10, 64)
@@ -564,7 +561,6 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		if err != nil || val < 0 {
 			return c.Send("قیمت هر ماه اضافی باید صفر یا یک عدد مثبت (تومان) باشد:")
 		}
-		draft["price_per_extra_month"] = float64(val)
 		draft["price_per_extra_month_toman"] = val
 	case "ip_limits":
 		baseIP := 0
@@ -626,7 +622,6 @@ func ProcessAdminDraftInput(c telebot.Context, text string) error {
 		if err != nil || val < 0 {
 			return c.Send("قیمت هر کاربر همزمان اضافی باید صفر یا یک عدد مثبت (تومان) باشد:")
 		}
-		draft["price_per_extra_ip"] = float64(val)
 		draft["price_per_extra_ip_toman"] = val
 	case "flow":
 		if text == "-" {
@@ -819,7 +814,7 @@ func HandleAdminDraftAction(c telebot.Context) error {
 		if planType == "paid" {
 			isLimited := draftGetBool(draft, "is_limited")
 			if isLimited {
-				pricePerGB := draftGetFloat64(draft, "price_per_gb")
+				pricePerGB := draftGetInt64(draft, "price_per_gb_toman")
 				if pricePerGB <= 0 {
 					_ = c.Respond(&telebot.CallbackResponse{Text: "⚠️ قیمت هر گیگابایت باید مثبت باشد."})
 					return c.Send("قیمت هر گیگابایت باید مثبت باشد. لطفاً پیش از ذخیره آن را مشخص کنید.")
@@ -830,7 +825,7 @@ func HandleAdminDraftAction(c telebot.Context) error {
 					return c.Send("حداقل حجم ترافیک باید مثبت باشد. لطفاً پیش از ذخیره آن را مشخص کنید.")
 				}
 			} else {
-				basePrice := draftGetFloat64(draft, "base_price")
+				basePrice := draftGetInt64(draft, "base_price_toman")
 				if basePrice <= 0 {
 					_ = c.Respond(&telebot.CallbackResponse{Text: "⚠️ قیمت پایه باید مثبت باشد."})
 					return c.Send("قیمت پایه باید مثبت باشد. لطفاً پیش از ذخیره آن را مشخص کنید.")
@@ -922,40 +917,16 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 	} else {
 		description := draftGetString(draft, "description")
 		usageDescription := draftGetString(draft, "usage_description")
-		basePrice := draftGetFloat64(draft, "base_price")
 		basePriceToman := draftGetInt64(draft, "base_price_toman")
-		if basePathTomanVal, ok := draft["base_price_toman"].(int64); ok && basePathTomanVal > 0 {
-			basePriceToman = basePathTomanVal
-		} else if basePriceToman == 0 && basePrice > 0 {
-			basePriceToman = int64(math.Round(basePrice))
-		}
 		baseIP := draftGetInt(draft, "base_ip_limit")
 		maxIP := draftGetInt(draft, "max_ip_limit")
-		extraIP := draftGetFloat64(draft, "price_per_extra_ip")
 		extraIPToman := draftGetInt64(draft, "price_per_extra_ip_toman")
-		if extraIPTomanVal, ok := draft["price_per_extra_ip_toman"].(int64); ok && extraIPTomanVal > 0 {
-			extraIPToman = extraIPTomanVal
-		} else if extraIPToman == 0 && extraIP > 0 {
-			extraIPToman = int64(math.Round(extraIP))
-		}
 		flow := draftGetString(draft, "flow")
 		discounts := draftGetDiscounts(draft, "discount_tiers")
 		isLimited := draftGetBool(draft, "is_limited")
-		pricePerGB := draftGetFloat64(draft, "price_per_gb")
 		pricePerGBToman := draftGetInt64(draft, "price_per_gb_toman")
-		if pricePerGBTomanVal, ok := draft["price_per_gb_toman"].(int64); ok && pricePerGBTomanVal > 0 {
-			pricePerGBToman = pricePerGBTomanVal
-		} else if pricePerGBToman == 0 && pricePerGB > 0 {
-			pricePerGBToman = int64(math.Round(pricePerGB))
-		}
 		minData := draftGetInt64(draft, "min_data_gb")
-		priceExtraMonth := draftGetFloat64(draft, "price_per_extra_month")
 		priceExtraMonthToman := draftGetInt64(draft, "price_per_extra_month_toman")
-		if priceExtraMonthTomanVal, ok := draft["price_per_extra_month_toman"].(int64); ok && priceExtraMonthTomanVal > 0 {
-			priceExtraMonthToman = priceExtraMonthTomanVal
-		} else if priceExtraMonthToman == 0 && priceExtraMonth > 0 {
-			priceExtraMonthToman = int64(math.Round(priceExtraMonth))
-		}
 
 		plan := &db.PaidPlan{
 			ID:                      id,
@@ -963,11 +934,11 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 			Description:             description,
 			UsageDescription:        usageDescription,
 			InboundIDs:              inboundIDs,
-			BasePrice:               basePrice,
+			BasePrice:               float64(basePriceToman), // legacy compatibility mirror
 			BasePriceToman:          basePriceToman,
 			BaseIPLimit:             baseIP,
 			MaxIPLimit:              maxIP,
-			PricePerExtraIP:         extraIP,
+			PricePerExtraIP:         float64(extraIPToman), // legacy compatibility mirror
 			PricePerExtraIPToman:    extraIPToman,
 			Flow:                    flow,
 			DiscountTiers:           discounts,
@@ -975,10 +946,10 @@ func SaveDraftPlan(c telebot.Context, planType string, draft map[string]interfac
 			Enabled:                 true,
 			SyncSubs:                draftGetBool(draft, "sync_subs"),
 			IsLimited:               isLimited,
-			PricePerGB:              pricePerGB,
+			PricePerGB:              float64(pricePerGBToman), // legacy compatibility mirror
 			PricePerGBToman:         pricePerGBToman,
 			MinDataGB:               minData,
-			PricePerExtraMonth:      priceExtraMonth,
+			PricePerExtraMonth:      float64(priceExtraMonthToman), // legacy compatibility mirror
 			PricePerExtraMonthToman: priceExtraMonthToman,
 		}
 
@@ -1123,7 +1094,7 @@ func HandleAdminDraftInboundsMenu(c telebot.Context) error {
 
 func showAdminDraftInboundsMenu(c telebot.Context, planType string, draft map[string]interface{}) error {
 	if bot.XUIClient == nil {
-		return c.Send("ارتباط با پنل 3x-ui برقرار نیست.")
+		return c.Send("ارتباط با پنل سرویس‌دهنده برقرار نیست.")
 	}
 
 	cached := bot.XUIClient.GetCachedInbounds()
@@ -1356,9 +1327,9 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 		var priceBlock string
 		if plan.IsLimited {
 			priceBlock = fmt.Sprintf("نوع: حجمی (محدود)\nقیمت/گیگابایت: %s تومان\nحداقل حجم: %d گیگابایت\nقیمت هر ماه اضافه: %s تومان",
-				persian.FormatMoney(int64(plan.PricePerGB)), plan.MinDataGB, persian.FormatMoney(int64(plan.PricePerExtraMonth)))
+				persian.FormatMoney(plan.PricePerGBToman), plan.MinDataGB, persian.FormatMoney(plan.PricePerExtraMonthToman))
 		} else {
-			priceBlock = fmt.Sprintf("نوع: نامحدود\nقیمت پایه: %s تومان", persian.FormatMoney(int64(plan.BasePrice)))
+			priceBlock = fmt.Sprintf("نوع: نامحدود\nقیمت پایه: %s تومان", persian.FormatMoney(plan.BasePriceToman))
 		}
 
 		ipLabel := fmt.Sprintf("%d-%d کاربر همزمان", plan.BaseIPLimit, plan.MaxIPLimit)
@@ -1372,7 +1343,7 @@ func showAdminViewPlan(c telebot.Context, planType string, planID int64) error {
 			"💲 قیمت هر کاربر اضافه: %s تومان\n⚡ فلو: %s\n🏷️ تخفیف‌ها: %s\n👥 کاربران اختصاصی: %v",
 			plan.ID, plan.Name, plan.Description, plan.UsageDescription, plan.Enabled, plan.IsGlobal,
 			inboundLabel(plan.InboundIDs), priceBlock, ipLabel,
-			persian.FormatMoney(int64(plan.PricePerExtraIP)), plan.Flow, formatDiscountLabel(plan.DiscountTiers), access)
+			persian.FormatMoney(plan.PricePerExtraIPToman), plan.Flow, formatDiscountLabel(plan.DiscountTiers), access)
 	}
 
 	toggleText := "🔴 غیرفعال‌سازی"
@@ -1612,7 +1583,7 @@ func draftGetDiscounts(m map[string]interface{}, key string) []db.DiscountTier {
 					out = append(out, d)
 				} else if dMap, ok := item.(map[string]interface{}); ok {
 					months := 0
-					percent := 0.0
+					basisPoints := int64(0)
 					if mVal, ok := dMap["months"]; ok {
 						if mInt, ok := mVal.(float64); ok {
 							months = int(mInt)
@@ -1620,13 +1591,11 @@ func draftGetDiscounts(m map[string]interface{}, key string) []db.DiscountTier {
 							months = mInt
 						}
 					}
-					if pVal, ok := dMap["percent"]; ok {
-						if pFloat, ok := pVal.(float64); ok {
-							percent = pFloat
-						}
+					if pVal, ok := dMap["basis_points"]; ok {
+						basisPoints, _ = coerceAnyInt64(pVal)
 					}
 					if months > 0 {
-						out = append(out, db.DiscountTier{Months: months, Percent: percent})
+						out = append(out, db.DiscountTier{Months: months, BasisPoints: basisPoints})
 					}
 				}
 			}
@@ -1709,14 +1678,41 @@ func parseDiscounts(text string) ([]db.DiscountTier, error) {
 		if err != nil || months <= 0 {
 			return nil, err
 		}
-		percent, err := strconv.ParseFloat(strings.TrimSpace(pair[1]), 64)
-		if err != nil || percent < 0 || percent > 100 {
-			return nil, err
+		bp, err := parsePercentBasisPoints(strings.TrimSpace(pair[1]))
+		if err != nil || bp < 0 || bp > 10000 {
+			return nil, fmt.Errorf("invalid discount basis points")
 		}
-		bp := int64(math.Round(percent * 100))
-		tiers = append(tiers, db.DiscountTier{Months: months, Percent: percent, BasisPoints: bp})
+		tiers = append(tiers, db.DiscountTier{Months: months, BasisPoints: bp})
 	}
 	return tiers, nil
+}
+
+func parsePercentBasisPoints(value string) (int64, error) {
+	parts := strings.Split(strings.TrimSpace(value), ".")
+	if len(parts) > 2 || parts[0] == "" {
+		return 0, fmt.Errorf("invalid percent")
+	}
+	whole, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || whole < 0 || whole > 100 {
+		return 0, fmt.Errorf("invalid percent")
+	}
+	fraction := int64(0)
+	if len(parts) == 2 {
+		if parts[1] == "" || len(parts[1]) > 2 {
+			return 0, fmt.Errorf("percent precision must be at most two decimals")
+		}
+		fraction, err = strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid percent")
+		}
+		if len(parts[1]) == 1 {
+			fraction *= 10
+		}
+	}
+	if whole == 100 && fraction != 0 {
+		return 0, fmt.Errorf("percent exceeds 100")
+	}
+	return whole*100 + fraction, nil
 }
 
 func cachedInboundNames() map[int]string {
@@ -1778,7 +1774,7 @@ func formatDiscountLabel(tiers []db.DiscountTier) string {
 	}
 	parts := make([]string, 0, len(tiers))
 	for _, t := range tiers {
-		parts = append(parts, fmt.Sprintf("%d ماهه: %g%%", t.Months, t.Percent))
+		parts = append(parts, fmt.Sprintf("%d ماهه: %s%%", t.Months, formatBasisPointPercent(t.GetBasisPoints())))
 	}
 	return strings.Join(parts, ", ")
 }

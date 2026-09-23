@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -163,27 +162,14 @@ func GetPaidPlanByID(ctx context.Context, id int64) (*PaidPlan, error) {
 func CreatePaidPlan(ctx context.Context, p *PaidPlan) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
-
-	if p.BasePriceToman == 0 && p.BasePrice > 0 {
-		p.BasePriceToman = int64(math.Round(p.BasePrice))
-	}
 	if p.BasePrice == 0 && p.BasePriceToman > 0 {
 		p.BasePrice = float64(p.BasePriceToman)
-	}
-	if p.PricePerExtraIPToman == 0 && p.PricePerExtraIP > 0 {
-		p.PricePerExtraIPToman = int64(math.Round(p.PricePerExtraIP))
 	}
 	if p.PricePerExtraIP == 0 && p.PricePerExtraIPToman > 0 {
 		p.PricePerExtraIP = float64(p.PricePerExtraIPToman)
 	}
-	if p.PricePerGBToman == 0 && p.PricePerGB > 0 {
-		p.PricePerGBToman = int64(math.Round(p.PricePerGB))
-	}
 	if p.PricePerGB == 0 && p.PricePerGBToman > 0 {
 		p.PricePerGB = float64(p.PricePerGBToman)
-	}
-	if p.PricePerExtraMonthToman == 0 && p.PricePerExtraMonth > 0 {
-		p.PricePerExtraMonthToman = int64(math.Round(p.PricePerExtraMonth))
 	}
 	if p.PricePerExtraMonth == 0 && p.PricePerExtraMonthToman > 0 {
 		p.PricePerExtraMonth = float64(p.PricePerExtraMonthToman)
@@ -209,27 +195,14 @@ func CreatePaidPlan(ctx context.Context, p *PaidPlan) error {
 func UpdatePaidPlan(ctx context.Context, p *PaidPlan) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
-
-	if p.BasePriceToman == 0 && p.BasePrice > 0 {
-		p.BasePriceToman = int64(math.Round(p.BasePrice))
-	}
 	if p.BasePrice == 0 && p.BasePriceToman > 0 {
 		p.BasePrice = float64(p.BasePriceToman)
-	}
-	if p.PricePerExtraIPToman == 0 && p.PricePerExtraIP > 0 {
-		p.PricePerExtraIPToman = int64(math.Round(p.PricePerExtraIP))
 	}
 	if p.PricePerExtraIP == 0 && p.PricePerExtraIPToman > 0 {
 		p.PricePerExtraIP = float64(p.PricePerExtraIPToman)
 	}
-	if p.PricePerGBToman == 0 && p.PricePerGB > 0 {
-		p.PricePerGBToman = int64(math.Round(p.PricePerGB))
-	}
 	if p.PricePerGB == 0 && p.PricePerGBToman > 0 {
 		p.PricePerGB = float64(p.PricePerGBToman)
-	}
-	if p.PricePerExtraMonthToman == 0 && p.PricePerExtraMonth > 0 {
-		p.PricePerExtraMonthToman = int64(math.Round(p.PricePerExtraMonth))
 	}
 	if p.PricePerExtraMonth == 0 && p.PricePerExtraMonthToman > 0 {
 		p.PricePerExtraMonth = float64(p.PricePerExtraMonthToman)
@@ -519,18 +492,6 @@ func scanPaidPlanRows(rows pgx.Rows) (*PaidPlan, error) {
 	if len(tierJSON) > 0 {
 		_ = json.Unmarshal(tierJSON, &p.DiscountTiers)
 	}
-	if p.BasePriceToman == 0 && p.BasePrice > 0 {
-		p.BasePriceToman = int64(math.Round(p.BasePrice))
-	}
-	if p.PricePerExtraIPToman == 0 && p.PricePerExtraIP > 0 {
-		p.PricePerExtraIPToman = int64(math.Round(p.PricePerExtraIP))
-	}
-	if p.PricePerGBToman == 0 && p.PricePerGB > 0 {
-		p.PricePerGBToman = int64(math.Round(p.PricePerGB))
-	}
-	if p.PricePerExtraMonthToman == 0 && p.PricePerExtraMonth > 0 {
-		p.PricePerExtraMonthToman = int64(math.Round(p.PricePerExtraMonth))
-	}
 	return p, nil
 }
 
@@ -553,18 +514,6 @@ func scanPaidPlanRow(row pgx.Row) (*PaidPlan, error) {
 	}
 	if len(tierJSON) > 0 {
 		_ = json.Unmarshal(tierJSON, &p.DiscountTiers)
-	}
-	if p.BasePriceToman == 0 && p.BasePrice > 0 {
-		p.BasePriceToman = int64(math.Round(p.BasePrice))
-	}
-	if p.PricePerExtraIPToman == 0 && p.PricePerExtraIP > 0 {
-		p.PricePerExtraIPToman = int64(math.Round(p.PricePerExtraIP))
-	}
-	if p.PricePerGBToman == 0 && p.PricePerGB > 0 {
-		p.PricePerGBToman = int64(math.Round(p.PricePerGB))
-	}
-	if p.PricePerExtraMonthToman == 0 && p.PricePerExtraMonth > 0 {
-		p.PricePerExtraMonthToman = int64(math.Round(p.PricePerExtraMonth))
 	}
 	return p, nil
 }

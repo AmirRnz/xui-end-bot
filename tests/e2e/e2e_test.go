@@ -507,10 +507,6 @@ func cleanDB(ctx context.Context, t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to seed card setting: %v", err)
 	}
-	err = db.SetSetting(ctx, "currency_name", "IRR")
-	if err != nil {
-		t.Fatalf("Failed to seed currency setting: %v", err)
-	}
 	err = db.SetSetting(ctx, "test_reset_days", "30")
 	if err != nil {
 		t.Fatalf("Failed to seed reset days setting: %v", err)
@@ -526,6 +522,8 @@ func setupE2E(t *testing.T) (*TestEnv, func()) {
 			t.Fatalf("Failed to load config: %v (example: %v)", err, errEx)
 		}
 	}
+	// Keep E2E authorization independent of developer config files.
+	config.Global.Admin.AdminIDs = append(config.Global.Admin.AdminIDs, 96937669)
 
 	// Setup mock servers
 	mockTG := NewMockTelegramServer()
@@ -1856,25 +1854,19 @@ func TestE2ESuite(t *testing.T) {
 			_ = env.ExpectResponse(t, 2*time.Second) // saved
 			_ = env.ExpectResponse(t, 2*time.Second) // settings menu
 
-			// Admin set currency
-			env.SendCallback(adminTGID, adminUsername, 999, "\fadmin_set_currency")
-			_ = env.ExpectResponse(t, 2*time.Second)
-			bot.GlobalFSM.SetState(adminTGID, "awaiting_setting_currency_name", nil)
-			env.SendMessage(adminTGID, adminUsername, "USD")
-			_ = env.ExpectResponse(t, 2*time.Second) // saved
-			_ = env.ExpectResponse(t, 2*time.Second) // settings menu
-
 			// User checks wallet top up details
 			env.SendCallback(userTGID, userUsername, 999, "\fbtn_topup")
 			respTopup := env.ExpectResponse(t, 2*time.Second)
 			if !strings.Contains(getStr(respTopup, "text"), "9876-5432-1098-7654") {
 				t.Fatalf("Expected new card number to be displayed in details, got: %+v", respTopup)
 			}
+			if !strings.Contains(getStr(respTopup, "text"), "تومان") {
+				t.Fatalf("Expected fixed Toman currency in top-up details, got: %+v", respTopup)
+			}
 
 			// Verify settings in DB
 			card, _ := db.GetSetting(env.ctx, "card_number")
-			curr, _ := db.GetSetting(env.ctx, "currency_name")
-			if card != "9876-5432-1098-7654" || curr != "USD" {
+			if card != "9876-5432-1098-7654" {
 				t.Fatalf("Settings values not updated properly in DB")
 			}
 		})

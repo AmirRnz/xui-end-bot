@@ -12,8 +12,8 @@ import (
 	"xui-end-bot/internal/xui"
 )
 
-var ErrXUIClientUnavailable = errors.New("x-ui client is not initialized")
-var errDeleteClientStillPresent = errors.New("x-ui client is still present after delete")
+var ErrXUIClientUnavailable = errors.New("پنل سرویس‌دهنده در دسترس نیست")
+var errDeleteClientStillPresent = errors.New("سرویس پس از حذف همچنان در پنل سرویس‌دهنده وجود دارد")
 
 type deleteResolution string
 
@@ -94,28 +94,15 @@ func safeRefundWalletWithDeps(
 		}
 	}
 
-	desired := map[string]any{
-		"action":                 "refund",
-		"original_operation_key": originalOpKey,
-		"refund_operation_key":   refundOpKey,
-		"user_id":                userID,
-		"amount":                 amount,
-		"description":            description,
-	}
+	record := reconcile.NewPendingRefundRecord(userID, subID, amount, refundOpKey, description, err.Error())
+	record.DesiredState["action"] = "refund"
+	record.DesiredState["original_operation_key"] = originalOpKey
+	record.DesiredState["refund_operation_key"] = refundOpKey
 	for k, v := range extra {
-		desired[k] = v
+		record.DesiredState[k] = v
 	}
-
-	record := &db.ReconciliationRecord{
-		OperationKey:   refundOpKey,
-		Kind:           "pending_refund",
-		UserID:         &userID,
-		SubscriptionID: subID,
-		DesiredState:   desired,
-		ObservedState:  map[string]any{"refund_error": err.Error()},
-		Status:         "pending_refund",
-		ErrorMessage:   err.Error(),
-	}
+	record.ObservedState = map[string]any{"refund_error": err.Error()}
+	record.ErrorMessage = err.Error()
 	recErr := persistReconFn(ctx, record)
 	if recErr != nil {
 		log.Printf("[CRITICAL] failed to persist pending refund reconciliation for user %d, key %s: %v", userID, refundOpKey, recErr)

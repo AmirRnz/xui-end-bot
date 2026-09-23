@@ -225,7 +225,7 @@ func HandleAdminCreateCustomPlan(c telebot.Context) error {
 
 func showAdminCreateInboundsMenu(c telebot.Context, draft map[string]interface{}) error {
 	if bot.XUIClient == nil {
-		return c.Send("ارتباط با پنل x-ui برقرار نیست.")
+		return c.Send("ارتباط با پنل سرویس‌دهنده برقرار نیست.")
 	}
 
 	cached := bot.XUIClient.GetCachedInbounds()
@@ -685,7 +685,7 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 	}
 
 	if bot.XUIClient == nil {
-		return c.Send("❌ خطای ارتباط: کلاینت x-ui مقداردهی نشده است.")
+		return c.Send("❌ ارتباط با پنل سرویس‌دهنده برقرار نیست.")
 	}
 
 	draft := state.Data
@@ -792,7 +792,7 @@ func ProcessAdminCreateClientDetails(c telebot.Context, text string) error {
 		}
 		if err != nil {
 			log.Printf("[ERROR] Failed to add client %s to 3x-ui panel: %v", email, err)
-			report.WriteString(fmt.Sprintf("❌ **%s**: خطا در ایجاد کلاینت در پنل 3x-ui\n\n", cust.Name))
+			report.WriteString(fmt.Sprintf("❌ **%s**: خطا در ایجاد سرویس در پنل سرویس‌دهنده\n\n", cust.Name))
 			continue
 		}
 

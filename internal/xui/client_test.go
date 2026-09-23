@@ -1,7 +1,9 @@
 package xui
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +13,88 @@ import (
 
 	"xui-end-bot/internal/config"
 )
+
+func newReadyClient(cfg *config.XUIConfig) (*Client, error) {
+	client, err := NewClient(cfg)
+	if err == nil {
+		client.SetReady(true)
+	}
+	return client, err
+}
+
+func TestMutationReadinessGateAndRecovery(t *testing.T) {
+	var mu sync.Mutex
+	panelAvailable := false
+	version := "3.8.5"
+	writes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/panel/api/server/getPanelUpdateInfo":
+			if !panelAvailable {
+				http.Error(w, "offline", http.StatusServiceUnavailable)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "obj": map[string]any{"currentVersion": version}})
+		case "/panel/api/inbounds/options":
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "obj": []any{}})
+		case "/panel/api/clients/add", "/panel/api/clients/del/test@example.com?keepTraffic=0":
+			writes++
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(&config.XUIConfig{BaseURL: server.URL, APIToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := client.AddClientResult(AddClientRequest{Client: ClientConfig{Email: "test@example.com"}})
+	if blocked.Outcome != WriteDefinitiveFailure || !errors.Is(blocked.Err, ErrNotReady) || IsUnknownOutcome(blocked.Err) {
+		t.Fatalf("unready mutation should fail definitively, got %#v", blocked)
+	}
+	if err := client.DeleteClient("test@example.com"); !errors.Is(err, ErrNotReady) {
+		t.Fatalf("unready delete should be blocked, got %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("unready mutation reached panel %d times", writes)
+	}
+
+	mu.Lock()
+	panelAvailable = true
+	mu.Unlock()
+	if _, err := client.CheckReadiness(context.Background()); err != nil || !client.IsReady() {
+		t.Fatalf("client did not recover after panel startup: ready=%v err=%v", client.IsReady(), err)
+	}
+
+	mu.Lock()
+	version = "4.0.0"
+	mu.Unlock()
+	if _, err := client.CheckReadiness(context.Background()); err == nil || client.IsReady() {
+		t.Fatalf("unsupported version must close the write gate: ready=%v err=%v", client.IsReady(), err)
+	}
+	blocked = client.AddClientResult(AddClientRequest{Client: ClientConfig{Email: "test@example.com"}})
+	if blocked.Outcome != WriteDefinitiveFailure || !errors.Is(blocked.Err, ErrNotReady) || IsUnknownOutcome(blocked.Err) {
+		t.Fatalf("unsupported version mutation should fail definitively, got %#v", blocked)
+	}
+
+	mu.Lock()
+	version = "3.8.5"
+	mu.Unlock()
+	if _, err := client.CheckReadiness(context.Background()); err != nil || !client.IsReady() {
+		t.Fatalf("client did not recover after version became supported: ready=%v err=%v", client.IsReady(), err)
+	}
+	result := client.AddClientResult(AddClientRequest{Client: ClientConfig{Email: "test@example.com"}})
+	if result.Outcome != WriteSucceeded || result.Err != nil {
+		t.Fatalf("ready mutation failed: %#v", result)
+	}
+	if writes != 1 {
+		t.Fatalf("expected one panel mutation after recovery, got %d", writes)
+	}
+}
 
 func TestAddClientTimeoutRepairsPartialInboundAttachmentsWithoutRetry(t *testing.T) {
 	var mu sync.Mutex
@@ -54,7 +138,7 @@ func TestAddClientTimeoutRepairsPartialInboundAttachmentsWithoutRetry(t *testing
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&config.XUIConfig{BaseURL: server.URL})
+	client, err := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -105,7 +189,7 @@ func TestAddClientTimeoutWithInconclusiveVerificationReturnsUnknownWithoutRetry(
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&config.XUIConfig{BaseURL: server.URL})
+	client, err := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -136,7 +220,7 @@ func TestGetSubscriptionLinksUsesPublicSubscriptionBaseURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&config.XUIConfig{
+	client, err := newReadyClient(&config.XUIConfig{
 		BaseURL:             server.URL,
 		SubscriptionBaseURL: "https://subs.example.com:9443",
 	})
@@ -165,7 +249,7 @@ func TestGetSubscriptionLinksBuildsFallbackWithSubscriptionPath(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&config.XUIConfig{
+	client, err := newReadyClient(&config.XUIConfig{
 		BaseURL:             server.URL,
 		SubscriptionBaseURL: "subs.example.com",
 		SubscriptionPath:    "/custom-sub/",
@@ -195,7 +279,7 @@ func TestGetSubscriptionLinksKeepsLinksWhenNoPublicBaseURLIsSet(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&config.XUIConfig{BaseURL: server.URL})
+	client, err := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -240,7 +324,7 @@ func TestBulkAttachDetach(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&config.XUIConfig{BaseURL: server.URL})
+	client, err := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -290,7 +374,7 @@ func TestBulkCreate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&config.XUIConfig{BaseURL: server.URL})
+	client, err := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -503,7 +587,7 @@ func TestUpdateClientPatchTimeoutVerification(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		client.httpClient.Timeout = 10 * time.Millisecond
 
 		res := client.UpdateClientPatchResult("timeout_ok@example.com", ClientPatch{LimitIP: &limitIP})
@@ -532,7 +616,7 @@ func TestUpdateClientPatchTimeoutVerification(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		client.httpClient.Timeout = 10 * time.Millisecond
 
 		res := client.UpdateClientPatchResult("timeout_mismatch@example.com", ClientPatch{LimitIP: &limitIP})
@@ -564,7 +648,7 @@ func TestUpdateClientPatchTimeoutVerification(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		client.httpClient.Timeout = 10 * time.Millisecond
 
 		res := client.UpdateClientPatchResult("timeout_missing@example.com", ClientPatch{LimitIP: &limitIP})
@@ -627,7 +711,7 @@ func TestFindClientBySubID_BoundedPagination(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		found, err := client.FindClientBySubID("target-sub")
 		if err != nil {
 			t.Fatalf("expected to find client on page 2, got err: %v", err)
@@ -669,7 +753,7 @@ func TestFindClientBySubID_BoundedPagination(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		found, err := client.FindClientBySubID("non-existent")
 		if !IsNotFound(err) {
 			t.Fatalf("expected ErrNotFound, got found=%v err=%v", found, err)
@@ -702,7 +786,7 @@ func TestFindClientBySubID_BoundedPagination(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		_, err := client.FindClientBySubID("non-existent")
 		if !IsNotFound(err) {
 			t.Fatalf("expected ErrNotFound, got err=%v", err)
@@ -746,7 +830,7 @@ func TestUpdateClientPatchResult(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, err := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, err := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		if err != nil {
 			t.Fatalf("NewClient failed: %v", err)
 		}
@@ -793,7 +877,7 @@ func TestUpdateClientPatchResult(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		zeroGB := int64(0)
 		emptyFlow := ""
 		res := client.UpdateClientPatchResult("zero@example.com", ClientPatch{
@@ -829,7 +913,7 @@ func TestUpdateClientPatchResult(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		client.httpClient.Timeout = 10 * time.Millisecond
 
 		newIP := 3
@@ -872,7 +956,7 @@ func TestUpdateClientPatchResult(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client, _ := NewClient(&config.XUIConfig{BaseURL: server.URL})
+		client, _ := newReadyClient(&config.XUIConfig{BaseURL: server.URL})
 		client.httpClient.Timeout = 10 * time.Millisecond
 
 		newIP := 5

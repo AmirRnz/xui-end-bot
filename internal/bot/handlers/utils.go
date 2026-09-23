@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"log"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/telebot.v3"
 	"xui-end-bot/internal/bot"
+	"xui-end-bot/internal/bot/persian"
 	"xui-end-bot/internal/db"
 	"xui-end-bot/internal/qr"
 	"xui-end-bot/internal/services/pricing"
@@ -66,11 +66,6 @@ func callbackParts(c telebot.Context) []string {
 
 func parseInt64(s string) (int64, error) {
 	v, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-	return v, err
-}
-
-func parseFloat(s string) (float64, error) {
-	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	return v, err
 }
 
@@ -167,15 +162,19 @@ func calculatePaidPrice(plan *db.PaidPlan, months, ipLimit int, dataGB int) int6
 	return quote.FinalPriceToman
 }
 
-func bestDiscount(tiers []db.DiscountTier, months int) float64 {
-	sort.Slice(tiers, func(i, j int) bool { return tiers[i].Months < tiers[j].Months })
-	best := 0.0
-	for _, tier := range tiers {
-		if months >= tier.Months && tier.Percent > best {
-			best = tier.Percent
-		}
+func calculateIPUpgradePrice(plan *db.PaidPlan, currentLimit, desiredLimit, months int) int64 {
+	if plan == nil || desiredLimit <= currentLimit || months <= 0 {
+		return 0
 	}
-	return best
+	return int64(desiredLimit-currentLimit) * plan.PricePerExtraIPToman * int64(months)
+}
+
+func formatTomanSetting(value string) string {
+	amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return "تنظیم نشده"
+	}
+	return persian.FormatMoney(amount)
 }
 
 func validInboundIDs(ids []int) []int {
@@ -491,6 +490,15 @@ func formatIPLimit(ipLimit int) string {
 		return "نامحدود"
 	}
 	return fmt.Sprintf("%d", ipLimit)
+}
+
+func formatBasisPointPercent(basisPoints int64) string {
+	whole, fraction := basisPoints/100, basisPoints%100
+	if fraction == 0 {
+		return strconv.FormatInt(whole, 10)
+	}
+	text := fmt.Sprintf("%d.%02d", whole, fraction)
+	return strings.TrimRight(strings.TrimRight(text, "0"), ".")
 }
 
 var devicesRegex = regexp.MustCompile(`devices:\s*(\d+)`)

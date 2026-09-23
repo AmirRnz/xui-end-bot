@@ -458,7 +458,9 @@ func TestPurchaseRollbackAndClaim(t *testing.T) {
 	}
 
 	// 2. Approve the purchase request
-	approvedReq, err := ApprovePurchaseRequest(ctx, req.ID, 999999998)
+	userIDPtr, claimReqID := userID, req.ID
+	claimWork := &ReconciliationRecord{OperationKey: "claim:" + strconv.FormatInt(req.ID, 10), Kind: "subscription_claim_adoption", UserID: &userIDPtr, PurchaseRequestID: &claimReqID, DesiredState: map[string]any{"purchase_request_id": req.ID, "user_id": userID}}
+	approvedReq, err := ApprovePurchaseRequest(ctx, req.ID, 999999998, claimWork)
 	if err != nil {
 		t.Fatalf("failed to approve purchase request: %v", err)
 	}
@@ -469,22 +471,14 @@ func TestPurchaseRollbackAndClaim(t *testing.T) {
 		t.Fatalf("expected payment approved and provisioning pending, got status=%q provisioning=%q", approvedReq.Status, approvedReq.ProvisioningStatus)
 	}
 
-	// Verify transaction was created
+	// Claim adoption is not a paid commerce action and creates no debit.
 	var txCount int
 	err = Pool.QueryRow(ctx, "SELECT count(*) FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", req.ID).Scan(&txCount)
 	if err != nil {
 		t.Fatalf("failed to count transactions: %v", err)
 	}
-	if txCount != 1 {
-		t.Fatalf("expected 1 transaction, got %d", txCount)
-	}
-	var operationKey string
-	err = Pool.QueryRow(ctx, "SELECT operation_key FROM transactions WHERE reference_type = 'purchase_request' AND reference_id = $1", req.ID).Scan(&operationKey)
-	if err != nil {
-		t.Fatalf("failed to read purchase approval operation key: %v", err)
-	}
-	if expected := "purchase_approval:" + strconv.FormatInt(req.ID, 10); operationKey != expected {
-		t.Fatalf("expected purchase approval operation key %q, got %q", expected, operationKey)
+	if txCount != 0 {
+		t.Fatalf("expected no financial transaction for legacy claim adoption, got %d", txCount)
 	}
 
 	// Verify HasPendingClaimRequest is now false since status is no longer 'pending'
@@ -497,13 +491,13 @@ func TestPurchaseRollbackAndClaim(t *testing.T) {
 	}
 
 	// 3. Record a provisioning failure/retry state. This must not undo the
-	// approved payment or delete its durable transaction.
+	// approved status or delete its durable adoption work.
 	err = RollbackPurchaseRequest(ctx, req.ID)
 	if err != nil {
 		t.Fatalf("failed to rollback purchase request: %v", err)
 	}
 
-	// Verify payment approval remains intact while provisioning is retryable.
+	// Verify approval remains intact while claim adoption is retryable.
 	rolledReq, err := GetPurchaseRequestByID(ctx, req.ID)
 	if err != nil {
 		t.Fatalf("failed to get purchase request: %v", err)
@@ -610,9 +604,11 @@ func TestPurchaseRequestIntentKeyIsPersistedAndUsedForApproval(t *testing.T) {
 		t.Fatalf("failed to create purchase intent test user: %v", err)
 	}
 
+	priceToman := int64(321)
 	req := &PurchaseRequest{
 		UserID:         userID,
 		Type:           "buy",
+		PriceToman:     &priceToman,
 		Price:          321,
 		Months:         1,
 		IPLimit:        1,
@@ -636,7 +632,9 @@ func TestPurchaseRequestIntentKeyIsPersistedAndUsedForApproval(t *testing.T) {
 		t.Fatal("expected the same confirmation intent to be rejected by the unique key")
 	}
 
-	approved, err := ApprovePurchaseRequest(ctx, req.ID, 999999995)
+	userPtr, purchaseID := userID, req.ID
+	workItem := &ReconciliationRecord{OperationKey: "direct_payment:" + strconv.FormatInt(req.ID, 10) + ":provisioning", Kind: "direct_payment_provisioning_retry", UserID: &userPtr, PurchaseRequestID: &purchaseID, DesiredState: map[string]any{"purchase_request_id": req.ID, "user_id": userID}}
+	approved, err := ApprovePurchaseRequest(ctx, req.ID, 999999995, workItem)
 	if err != nil || approved == nil {
 		t.Fatalf("failed to approve purchase request: approved=%#v err=%v", approved, err)
 	}
