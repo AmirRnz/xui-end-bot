@@ -561,7 +561,7 @@ func HandleSubscriptionLimitSetDirect(c telebot.Context) error {
 	createdIntent, err := db.CreatePaymentIntent(context.Background(), intent)
 	if err != nil {
 		log.Printf("[INTENT] Failed to create payment intent for user %d IP upgrade: %v", user.ID, err)
-		return maybeEditOrSend(c, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
+		return paymentIntentCreateFailure(c, user, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
 	}
 	fsmData["intent_id"] = createdIntent.ID
 	fsmData["operation_token"] = createdIntent.IntentToken
@@ -912,7 +912,7 @@ func HandleExtendSubscriptionDirect(c telebot.Context) error {
 	createdIntent, err := db.CreatePaymentIntent(context.Background(), extendIntent)
 	if err != nil {
 		log.Printf("[INTENT] Failed to create payment intent for user %d extend: %v", user.ID, err)
-		return maybeEditOrSend(c, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
+		return paymentIntentCreateFailure(c, user, "عملیات با خطا مواجه شد. لطفاً مجدداً تلاش کنید یا با پشتیبانی در ارتباط باشید.")
 	}
 	extendData["intent_id"] = createdIntent.ID
 	extendData["operation_token"] = createdIntent.IntentToken

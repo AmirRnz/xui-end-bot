@@ -648,3 +648,35 @@ func TestPurchaseRequestIntentKeyIsPersistedAndUsedForApproval(t *testing.T) {
 		t.Fatalf("expected approval transaction key %q, got %q", operationKey, transactionKey)
 	}
 }
+
+func TestPaidPlanCompatibilityFloatsMirrorIntegerPrices(t *testing.T) {
+	ctx := setupTestDB(t)
+	plan := &PaidPlan{
+		Name:      "mirror_test_" + strconv.FormatInt(time.Now().UnixNano(), 10),
+		BasePrice: 999, PricePerExtraIP: 888, PricePerGB: 777, PricePerExtraMonth: 666,
+		BasePriceToman: 12000, PricePerExtraIPToman: 3400, PricePerGBToman: 560, PricePerExtraMonthToman: 7800,
+		InboundIDs: []int{1}, BaseIPLimit: 1, MaxIPLimit: 3, DiscountTiers: []DiscountTier{}, IsGlobal: true, Enabled: true,
+	}
+	if err := CreatePaidPlan(ctx, plan); err != nil {
+		t.Fatalf("create paid plan: %v", err)
+	}
+	defer Pool.Exec(ctx, `DELETE FROM paid_plans WHERE id = $1`, plan.ID)
+	assertMirrors := func(wantBase, wantIP, wantGB, wantMonth float64) {
+		t.Helper()
+		var base, ip, gb, month float64
+		if err := Pool.QueryRow(ctx, `SELECT base_price, price_per_extra_ip, price_per_gb, price_per_extra_month FROM paid_plans WHERE id = $1`, plan.ID).Scan(&base, &ip, &gb, &month); err != nil {
+			t.Fatalf("read price mirrors: %v", err)
+		}
+		if base != wantBase || ip != wantIP || gb != wantGB || month != wantMonth {
+			t.Fatalf("float compatibility fields do not mirror integer prices: got %v,%v,%v,%v want %v,%v,%v,%v", base, ip, gb, month, wantBase, wantIP, wantGB, wantMonth)
+		}
+	}
+	assertMirrors(12000, 3400, 560, 7800)
+
+	plan.BasePrice, plan.PricePerExtraIP, plan.PricePerGB, plan.PricePerExtraMonth = 1, 2, 3, 4
+	plan.BasePriceToman, plan.PricePerExtraIPToman, plan.PricePerGBToman, plan.PricePerExtraMonthToman = 22000, 4400, 660, 8800
+	if err := UpdatePaidPlan(ctx, plan); err != nil {
+		t.Fatalf("update paid plan: %v", err)
+	}
+	assertMirrors(22000, 4400, 660, 8800)
+}

@@ -162,18 +162,10 @@ func GetPaidPlanByID(ctx context.Context, id int64) (*PaidPlan, error) {
 func CreatePaidPlan(ctx context.Context, p *PaidPlan) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
-	if p.BasePrice == 0 && p.BasePriceToman > 0 {
-		p.BasePrice = float64(p.BasePriceToman)
-	}
-	if p.PricePerExtraIP == 0 && p.PricePerExtraIPToman > 0 {
-		p.PricePerExtraIP = float64(p.PricePerExtraIPToman)
-	}
-	if p.PricePerGB == 0 && p.PricePerGBToman > 0 {
-		p.PricePerGB = float64(p.PricePerGBToman)
-	}
-	if p.PricePerExtraMonth == 0 && p.PricePerExtraMonthToman > 0 {
-		p.PricePerExtraMonth = float64(p.PricePerExtraMonthToman)
-	}
+	p.BasePrice = float64(p.BasePriceToman)
+	p.PricePerExtraIP = float64(p.PricePerExtraIPToman)
+	p.PricePerGB = float64(p.PricePerGBToman)
+	p.PricePerExtraMonth = float64(p.PricePerExtraMonthToman)
 
 	inboundJSON, err := json.Marshal(p.InboundIDs)
 	if err != nil {
@@ -195,18 +187,10 @@ func CreatePaidPlan(ctx context.Context, p *PaidPlan) error {
 func UpdatePaidPlan(ctx context.Context, p *PaidPlan) error {
 	ctx, cancel := dbCtx(ctx)
 	defer cancel()
-	if p.BasePrice == 0 && p.BasePriceToman > 0 {
-		p.BasePrice = float64(p.BasePriceToman)
-	}
-	if p.PricePerExtraIP == 0 && p.PricePerExtraIPToman > 0 {
-		p.PricePerExtraIP = float64(p.PricePerExtraIPToman)
-	}
-	if p.PricePerGB == 0 && p.PricePerGBToman > 0 {
-		p.PricePerGB = float64(p.PricePerGBToman)
-	}
-	if p.PricePerExtraMonth == 0 && p.PricePerExtraMonthToman > 0 {
-		p.PricePerExtraMonth = float64(p.PricePerExtraMonthToman)
-	}
+	p.BasePrice = float64(p.BasePriceToman)
+	p.PricePerExtraIP = float64(p.PricePerExtraIPToman)
+	p.PricePerGB = float64(p.PricePerGBToman)
+	p.PricePerExtraMonth = float64(p.PricePerExtraMonthToman)
 
 	inboundJSON, err := json.Marshal(p.InboundIDs)
 	if err != nil {
